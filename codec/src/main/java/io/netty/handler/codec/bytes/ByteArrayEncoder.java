@@ -15,9 +15,9 @@
  */
 package io.netty.handler.codec.bytes;
 
-import io.netty.buffer.BufType;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundMessageHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
@@ -48,24 +48,16 @@ import io.netty.handler.codec.LengthFieldPrepender;
  * }
  * </pre>
  */
+@Sharable
 public class ByteArrayEncoder extends ChannelOutboundMessageHandlerAdapter<byte[]> {
 
-    private final BufType nextBufferType;
-
-    public ByteArrayEncoder(BufType nextBufferType) {
-        if (nextBufferType == null) {
-            throw new NullPointerException("nextBufferType");
-        }
-        this.nextBufferType = nextBufferType;
-    }
-
     @Override
-    protected void flush(ChannelHandlerContext ctx, byte[] msg) throws Exception {
+    public void flush(ChannelHandlerContext ctx, byte[] msg) throws Exception {
         if (msg.length == 0) {
             return;
         }
 
-        switch (nextBufferType) {
+        switch (ctx.nextOutboundBufferType()) {
             case BYTE:
                 ctx.nextOutboundByteBuffer().writeBytes(msg);
                 break;

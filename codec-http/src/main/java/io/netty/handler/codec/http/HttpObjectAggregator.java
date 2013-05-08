@@ -18,6 +18,7 @@ package io.netty.handler.codec.http;
 import io.netty.buffer.BufUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.MessageBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -47,8 +48,8 @@ import static io.netty.handler.codec.http.HttpHeaders.*;
  */
 public class HttpObjectAggregator extends MessageToMessageDecoder<HttpObject> {
     public static final int DEFAULT_MAX_COMPOSITEBUFFER_COMPONENTS = 1024;
-    private static final ByteBuf CONTINUE = Unpooled.copiedBuffer(
-            "HTTP/1.1 100 Continue\r\n\r\n", CharsetUtil.US_ASCII);
+    private static final ByteBuf CONTINUE = Unpooled.unreleasableBuffer(Unpooled.copiedBuffer(
+            "HTTP/1.1 100 Continue\r\n\r\n", CharsetUtil.US_ASCII));
 
     private final int maxContentLength;
     private FullHttpMessage currentMessage;
@@ -106,7 +107,7 @@ public class HttpObjectAggregator extends MessageToMessageDecoder<HttpObject> {
     }
 
     @Override
-    protected Object decode(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
+    protected void decode(ChannelHandlerContext ctx, HttpObject msg, MessageBuf<Object> out) throws Exception {
         FullHttpMessage currentMessage = this.currentMessage;
 
         if (msg instanceof HttpMessage) {
@@ -126,8 +127,8 @@ public class HttpObjectAggregator extends MessageToMessageDecoder<HttpObject> {
             if (!m.getDecoderResult().isSuccess()) {
                 removeTransferEncodingChunked(m);
                 this.currentMessage = null;
-                BufUtil.retain(m);
-                return m;
+                out.add(BufUtil.retain(m));
+                return;
             }
             if (msg instanceof HttpRequest) {
                 HttpRequest header = (HttpRequest) msg;
@@ -146,16 +147,14 @@ public class HttpObjectAggregator extends MessageToMessageDecoder<HttpObject> {
 
             // A streamed message - initialize the cumulative buffer, and wait for incoming chunks.
             removeTransferEncodingChunked(currentMessage);
-            return null;
-
         } else if (msg instanceof HttpContent) {
             assert currentMessage != null;
 
             // Merge the received chunk into the content of the current message.
             HttpContent chunk = (HttpContent) msg;
-            CompositeByteBuf content = (CompositeByteBuf) currentMessage.data();
+            CompositeByteBuf content = (CompositeByteBuf) currentMessage.content();
 
-            if (content.readableBytes() > maxContentLength - chunk.data().readableBytes()) {
+            if (content.readableBytes() > maxContentLength - chunk.content().readableBytes()) {
                 // TODO: Respond with 413 Request Entity Too Large
                 //   and discard the traffic or close the connection.
                 //       No need to notify the upstream handlers - just log.
@@ -166,16 +165,16 @@ public class HttpObjectAggregator extends MessageToMessageDecoder<HttpObject> {
             }
 
             // Append the content of the chunk
-            if (chunk.data().isReadable()) {
+            if (chunk.content().isReadable()) {
                 chunk.retain();
-                content.addComponent(chunk.data());
-                content.writerIndex(content.writerIndex() + chunk.data().readableBytes());
+                content.addComponent(chunk.content());
+                content.writerIndex(content.writerIndex() + chunk.content().readableBytes());
             }
 
             final boolean last;
             if (!chunk.getDecoderResult().isSuccess()) {
                 currentMessage.setDecoderResult(
-                        DecoderResult.partialFailure(chunk.getDecoderResult().cause()));
+                        DecoderResult.failure(chunk.getDecoderResult().cause()));
                 last = true;
             } else {
                 last = chunk instanceof LastHttpContent;
@@ -196,9 +195,7 @@ public class HttpObjectAggregator extends MessageToMessageDecoder<HttpObject> {
                         String.valueOf(content.readableBytes()));
 
                 // All done
-                return currentMessage;
-            } else {
-                return null;
+                out.add(currentMessage);
             }
         } else {
             throw new Error();
@@ -206,7 +203,7 @@ public class HttpObjectAggregator extends MessageToMessageDecoder<HttpObject> {
     }
 
     @Override
-    public void beforeAdd(ChannelHandlerContext ctx) throws Exception {
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         this.ctx = ctx;
     }
 }

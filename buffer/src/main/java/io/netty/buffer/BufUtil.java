@@ -25,6 +25,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
+import java.util.Iterator;
 
 /**
  * A collection of utility methods that is related with handling {@link ByteBuf}, {@link MessageBuf}, and their
@@ -46,20 +47,24 @@ public final class BufUtil {
      * Try to call {@link ReferenceCounted#retain()} if the specified message implements {@link ReferenceCounted}.
      * If the specified message doesn't implement {@link ReferenceCounted}, this method does nothing.
      */
-    public static void retain(Object msg) {
+    @SuppressWarnings("unchecked")
+    public static <T> T retain(T msg) {
         if (msg instanceof ReferenceCounted) {
-            ((ReferenceCounted) msg).retain();
+            return (T) ((ReferenceCounted) msg).retain();
         }
+        return msg;
     }
 
     /**
      * Try to call {@link ReferenceCounted#retain()} if the specified message implements {@link ReferenceCounted}.
      * If the specified message doesn't implement {@link ReferenceCounted}, this method does nothing.
      */
-    public static void retain(Object msg, int increment) {
+    @SuppressWarnings("unchecked")
+    public static <T> T retain(T msg, int increment) {
         if (msg instanceof ReferenceCounted) {
-            ((ReferenceCounted) msg).retain(increment);
+            return (T) ((ReferenceCounted) msg).retain(increment);
         }
+        return msg;
     }
 
     /**
@@ -411,6 +416,30 @@ public final class BufUtil {
             throw new IllegalStateException(x);
         }
         return dst.flip().toString();
+    }
+
+    /**
+     * Return the content of the given {@link MessageBuf} as string representation.
+     */
+    public static String contentToString(MessageBuf<?> buf) {
+        if (buf.isEmpty()) {
+            return "[]";
+        }
+        Iterator<?> it = buf.iterator();
+        StringBuilder sb = new StringBuilder();
+        sb.append('[');
+        while (it.hasNext()) {
+            Object msg = it.next();
+            if (msg == buf) {
+                sb.append('(' + buf.getClass().getSimpleName() + ')');
+            } else {
+                sb.append(msg);
+            }
+            if (it.hasNext()) {
+                sb.append(", ");
+            }
+        }
+        return sb.append(']').toString();
     }
 
     private BufUtil() { }

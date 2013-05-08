@@ -16,7 +16,6 @@
 package io.netty.handler.codec;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.MessageBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
@@ -265,8 +264,8 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
 
     static final Signal REPLAY = new Signal(ReplayingDecoder.class.getName() + ".REPLAY");
 
-    private ByteBuf cumulation;
-    private ReplayingDecoderBuffer replayable;
+    private ChannelHandlerContext ctx;
+    private final ReplayingDecoderBuffer replayable = new ReplayingDecoderBuffer();
     private S state;
     private int checkpoint = -1;
     private boolean decodeWasNull;
@@ -289,7 +288,7 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
      * Stores the internal cumulative buffer's reader position.
      */
     protected void checkpoint() {
-        checkpoint = cumulation.readerIndex();
+        checkpoint = internalBuffer().readerIndex();
     }
 
     /**
@@ -335,18 +334,12 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
      * Use it only when you must use it at your own risk.
      */
     protected ByteBuf internalBuffer() {
-        return cumulation;
+        return ctx.inboundByteBuffer();
     }
 
     @Override
-    public final ByteBuf newInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        cumulation = newInboundBuffer0(ctx);
-        replayable = new ReplayingDecoderBuffer(cumulation);
-        return cumulation;
-    }
-
-    protected ByteBuf newInboundBuffer0(ChannelHandlerContext ctx) throws Exception {
-        return super.newInboundBuffer(ctx);
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        this.ctx = ctx;
     }
 
     @Override
@@ -364,45 +357,47 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        replayable.terminate();
-        ByteBuf in = cumulation;
-        if (in.isReadable()) {
-            callDecode(ctx, in);
-        }
-
+        OutputMessageBuf out = OutputMessageBuf.get();
         try {
-            if (ctx.nextInboundMessageBuffer().unfoldAndAdd(decodeLast(ctx, replayable))) {
-                ctx.fireInboundBufferUpdated();
+            replayable.terminate();
+            ByteBuf in = internalBuffer();
+            replayable.setCumulation(in);
+            if (in.isReadable()) {
+                callDecode(ctx, in);
             }
+
+            decodeLast(ctx, replayable, out);
         } catch (Signal replay) {
             // Ignore
             replay.expect(REPLAY);
-        } catch (Throwable t) {
-            if (t instanceof CodecException) {
-                ctx.fireExceptionCaught(t);
-            } else {
-                ctx.fireExceptionCaught(new DecoderException(t));
+        } catch (CodecException e) {
+            throw e;
+        } catch (Throwable cause) {
+            throw new DecoderException(cause);
+        } finally {
+            if (out.drainToNextInbound(ctx)) {
+                ctx.fireInboundBufferUpdated();
             }
-        }
 
-        ctx.fireChannelInactive();
+            ctx.fireChannelInactive();
+        }
     }
 
     @Override
     protected void callDecode(ChannelHandlerContext ctx, ByteBuf buf) {
         boolean wasNull = false;
-
-        ByteBuf in = cumulation;
-        MessageBuf<Object> out = ctx.nextInboundMessageBuffer();
-        boolean decoded = false;
-        while (in.isReadable()) {
-            try {
+        ByteBuf in = internalBuffer();
+        replayable.setCumulation(in);
+        OutputMessageBuf out = OutputMessageBuf.get();
+        try {
+            while (in.isReadable()) {
                 int oldReaderIndex = checkpoint = in.readerIndex();
-                Object result = null;
+                int outSize = out.size();
                 S oldState = state;
                 try {
-                    result = decode(ctx, replayable);
-                    if (result == null) {
+                    decode(ctx, replayable, out);
+                    if (outSize == out.size()) {
+                        wasNull = true;
                         if (oldReaderIndex == in.readerIndex() && oldState == state) {
                             throw new IllegalStateException(
                                     "null cannot be returned if no data is consumed and state didn't change.");
@@ -422,51 +417,32 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
                         // Called by cleanup() - no need to maintain the readerIndex
                         // anymore because the buffer has been released already.
                     }
-                }
-
-                if (result == null) {
-                    wasNull = true;
-
-                    // Seems like more data is required.
-                    // Let us wait for the next notification.
                     break;
                 }
                 wasNull = false;
 
                 if (oldReaderIndex == in.readerIndex() && oldState == state) {
                     throw new IllegalStateException(
-                            "decode() method must consume at least one byte " +
-                            "if it returned a decoded message (caused by: " +
-                            getClass() + ')');
+                           "decode() method must consume at least one byte " +
+                           "if it returned a decoded message (caused by: " +
+                           getClass() + ')');
                 }
-
-                // A successful decode
-                if (out.unfoldAndAdd(result)) {
-                    decoded = true;
-                    if (isSingleDecode()) {
-                        break;
-                    }
-                }
-            } catch (Throwable t) {
-                if (decoded) {
-                    decoded = false;
-                    ctx.fireInboundBufferUpdated();
-                }
-
-                if (t instanceof CodecException) {
-                    ctx.fireExceptionCaught(t);
-                } else {
-                    ctx.fireExceptionCaught(new DecoderException(t));
+                if (isSingleDecode()) {
+                    break;
                 }
             }
-        }
-
-        if (decoded) {
-            decodeWasNull = false;
-            ctx.fireInboundBufferUpdated();
-        } else {
-            if (wasNull) {
-                decodeWasNull = true;
+        } catch (CodecException e) {
+            throw e;
+        } catch (Throwable cause) {
+            throw new DecoderException(cause);
+        } finally {
+            if (out.drainToNextInbound(ctx)) {
+                decodeWasNull = false;
+                ctx.fireInboundBufferUpdated();
+            } else {
+                if (wasNull) {
+                    decodeWasNull = true;
+                }
             }
         }
     }
@@ -482,5 +458,4 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
 
         super.channelReadSuspended(ctx);
     }
-
 }

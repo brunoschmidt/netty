@@ -16,6 +16,8 @@
 
 package io.netty.buffer;
 
+import io.netty.util.internal.PlatformDependent;
+
 /**
  * Skeltal {@link ByteBufAllocator} implementation to extend.
  */
@@ -34,11 +36,12 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
     /**
      * Create new instance
      *
-     * @param directByDefault   {@code true} if direct buffers should be used by default.
+     * @param preferDirect {@code true} if {@link #buffer(int)} should try to allocate a direct buffer rather than
+     *                     a heap buffer
      */
-    protected AbstractByteBufAllocator(boolean directByDefault) {
-        this.directByDefault = directByDefault;
-        emptyBuf = new UnpooledHeapByteBuf(this, 0, 0);
+    protected AbstractByteBufAllocator(boolean preferDirect) {
+        directByDefault = preferDirect && PlatformDependent.hasUnsafe();
+        emptyBuf = new EmptyByteBuf(this);
     }
 
     @Override
@@ -60,6 +63,30 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
     @Override
     public ByteBuf buffer(int initialCapacity, int maxCapacity) {
         if (directByDefault) {
+            return directBuffer(initialCapacity, maxCapacity);
+        }
+        return heapBuffer(initialCapacity, maxCapacity);
+    }
+
+    @Override
+    public ByteBuf ioBuffer() {
+        if (PlatformDependent.hasUnsafe()) {
+            return directBuffer(0);
+        }
+        return heapBuffer(0);
+    }
+
+    @Override
+    public ByteBuf ioBuffer(int initialCapacity) {
+        if (PlatformDependent.hasUnsafe()) {
+            return directBuffer(initialCapacity);
+        }
+        return heapBuffer(initialCapacity);
+    }
+
+    @Override
+    public ByteBuf ioBuffer(int initialCapacity, int maxCapacity) {
+        if (PlatformDependent.hasUnsafe()) {
             return directBuffer(initialCapacity, maxCapacity);
         }
         return heapBuffer(initialCapacity, maxCapacity);

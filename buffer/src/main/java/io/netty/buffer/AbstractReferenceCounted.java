@@ -15,19 +15,52 @@
  */
 package io.netty.buffer;
 
+import io.netty.util.internal.PlatformDependent;
+
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
+/**
+ * Abstract base class for classes wants to implement {@link ReferenceCounted}.
+ */
 public abstract class AbstractReferenceCounted implements ReferenceCounted {
 
     private static final AtomicIntegerFieldUpdater<AbstractReferenceCounted> refCntUpdater =
             AtomicIntegerFieldUpdater.newUpdater(AbstractReferenceCounted.class, "refCnt");
 
+    private static final long REFCNT_FIELD_OFFSET;
+
+    static {
+        long refCntFieldOffset = -1;
+        try {
+            if (PlatformDependent.hasUnsafe()) {
+                refCntFieldOffset = PlatformDependent.objectFieldOffset(
+                        AbstractReferenceCounted.class.getDeclaredField("refCnt"));
+            }
+        } catch (Throwable t) {
+            // Ignored
+        }
+
+        REFCNT_FIELD_OFFSET = refCntFieldOffset;
+    }
+
     @SuppressWarnings("FieldMayBeFinal")
     private volatile int refCnt = 1;
 
     @Override
-    public int refCnt() {
-        return refCnt;
+    public final int refCnt() {
+        if (REFCNT_FIELD_OFFSET >= 0) {
+            // Try to do non-volatile read for performance.
+            return PlatformDependent.getInt(this, REFCNT_FIELD_OFFSET);
+        } else {
+            return refCnt;
+        }
+    }
+
+    /**
+     * An unsafe operation intended for use by a subclass that sets the reference count of the buffer directly
+     */
+    protected final void setRefCnt(int refCnt) {
+        this.refCnt = refCnt;
     }
 
     @Override
@@ -108,5 +141,8 @@ public abstract class AbstractReferenceCounted implements ReferenceCounted {
         }
     }
 
+    /**
+     * Called once {@link #refCnt()} is equals 0.
+     */
     protected abstract void deallocate();
 }

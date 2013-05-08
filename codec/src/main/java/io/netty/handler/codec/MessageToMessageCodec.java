@@ -26,7 +26,7 @@ import io.netty.util.internal.TypeParameterMatcher;
 /**
  * A Codec for on-the-fly encoding/decoding of message.
  *
- * This can be though of an combination of {@link MessageToMessageDecoder} and {@link MessageToMessageEncoder}.
+ * This can be thought of as a combination of {@link MessageToMessageDecoder} and {@link MessageToMessageEncoder}.
  *
  * Here is an example of a {@link MessageToMessageCodec} which just decode from {@link Integer} to {@link Long}
  * and encode from {@link Long} to {@link Integer}.
@@ -62,8 +62,8 @@ public abstract class MessageToMessageCodec<INBOUND_IN, OUTBOUND_IN>
 
         @Override
         @SuppressWarnings("unchecked")
-        protected Object encode(ChannelHandlerContext ctx, Object msg) throws Exception {
-            return MessageToMessageCodec.this.encode(ctx, (OUTBOUND_IN) msg);
+        protected void encode(ChannelHandlerContext ctx, Object msg, MessageBuf<Object> out) throws Exception {
+            MessageToMessageCodec.this.encode(ctx, (OUTBOUND_IN) msg, out);
         }
     };
 
@@ -77,8 +77,8 @@ public abstract class MessageToMessageCodec<INBOUND_IN, OUTBOUND_IN>
 
         @Override
         @SuppressWarnings("unchecked")
-        protected Object decode(ChannelHandlerContext ctx, Object msg) throws Exception {
-            return MessageToMessageCodec.this.decode(ctx, (INBOUND_IN) msg);
+        protected void decode(ChannelHandlerContext ctx, Object msg, MessageBuf<Object> out) throws Exception {
+            MessageToMessageCodec.this.decode(ctx, (INBOUND_IN) msg, out);
         }
     };
 
@@ -90,6 +90,12 @@ public abstract class MessageToMessageCodec<INBOUND_IN, OUTBOUND_IN>
         outboundMsgMatcher = TypeParameterMatcher.find(this, MessageToMessageCodec.class, "OUTBOUND_IN");
     }
 
+    protected MessageToMessageCodec(
+            Class<? extends INBOUND_IN> inboundMessageType, Class<? extends OUTBOUND_IN> outboundMessageType) {
+        inboundMsgMatcher = TypeParameterMatcher.get(inboundMessageType);
+        outboundMsgMatcher = TypeParameterMatcher.get(outboundMessageType);
+    }
+
     @Override
     @SuppressWarnings("unchecked")
     public MessageBuf<INBOUND_IN> newInboundBuffer(ChannelHandlerContext ctx) throws Exception {
@@ -97,19 +103,9 @@ public abstract class MessageToMessageCodec<INBOUND_IN, OUTBOUND_IN>
     }
 
     @Override
-    public void freeInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        decoder.freeInboundBuffer(ctx);
-    }
-
-    @Override
     @SuppressWarnings("unchecked")
     public MessageBuf<OUTBOUND_IN> newOutboundBuffer(ChannelHandlerContext ctx) throws Exception {
         return (MessageBuf<OUTBOUND_IN>) encoder.newOutboundBuffer(ctx);
-    }
-
-    @Override
-    public void freeOutboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        encoder.freeOutboundBuffer(ctx);
     }
 
     @Override
@@ -141,6 +137,6 @@ public abstract class MessageToMessageCodec<INBOUND_IN, OUTBOUND_IN>
         return outboundMsgMatcher.match(msg);
     }
 
-    protected abstract Object encode(ChannelHandlerContext ctx, OUTBOUND_IN msg) throws Exception;
-    protected abstract Object decode(ChannelHandlerContext ctx, INBOUND_IN msg) throws Exception;
+    protected abstract void encode(ChannelHandlerContext ctx, OUTBOUND_IN msg, MessageBuf<Object> out) throws Exception;
+    protected abstract void decode(ChannelHandlerContext ctx, INBOUND_IN msg, MessageBuf<Object> out) throws Exception;
 }

@@ -24,6 +24,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelHandlerUtil;
 import io.netty.channel.ChannelOutboundMessageHandler;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
@@ -90,13 +91,20 @@ public class ChunkedWriteHandler
 
     @Override
     public MessageBuf<Object> newOutboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        this.ctx = ctx;
         return queue;
     }
 
     @Override
-    public void freeOutboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        queue.release();
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        this.ctx = ctx;
+    }
+
+    // This method should not need any synchronization as the ChunkedWriteHandler will not receive any new events
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        // Fail all promised that are queued. This is needed because otherwise we would never notify the
+        // ChannelFuture and the registered FutureListener. See #304
+        discard(ctx, new ChannelException(ChunkedWriteHandler.class.getSimpleName() + " removed from pipeline."));
     }
 
     private boolean isWritable() {
@@ -308,7 +316,7 @@ public class ChunkedWriteHandler
                     });
                 }
             } else {
-                ctx.nextOutboundMessageBuffer().add(currentEvent);
+                ChannelHandlerUtil.addToNextOutboundBuffer(ctx, currentEvent);
                 this.currentEvent = null;
             }
 
@@ -345,21 +353,5 @@ public class ChunkedWriteHandler
                 logger.warn("Failed to close a chunked input.", t);
             }
         }
-    }
-
-    @Override
-    public void beforeRemove(ChannelHandlerContext ctx) throws Exception {
-        // try to flush again a last time.
-        //
-        // See #304
-        doFlush(ctx);
-    }
-
-    // This method should not need any synchronization as the ChunkedWriteHandler will not receive any new events
-    @Override
-    public void afterRemove(ChannelHandlerContext ctx) throws Exception {
-        // Fail all MessageEvent's that are left. This is needed because otherwise we would never notify the
-        // ChannelFuture and the registered FutureListener. See #304
-        discard(ctx, new ChannelException(ChunkedWriteHandler.class.getSimpleName() + " removed from pipeline."));
     }
 }

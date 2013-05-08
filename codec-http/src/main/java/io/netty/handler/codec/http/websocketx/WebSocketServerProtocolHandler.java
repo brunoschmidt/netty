@@ -20,6 +20,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundMessageHandlerAdapter;
+import io.netty.channel.ChannelStateHandler;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
@@ -40,8 +41,22 @@ import static io.netty.handler.codec.http.HttpVersion.*;
  * The implementation of this handler assumes that you just want to run  a websocket server and not process other types
  * HTTP requests (like GET and POST). If you wish to support both HTTP requests and websockets in the one server, refer
  * to the <tt>io.netty.example.http.websocketx.server.WebSocketServer</tt> example.
+ *
+ * To know once a handshake was done you can intercept the
+ * {@link ChannelStateHandler#userEventTriggered(ChannelHandlerContext, Object)} and check if the event was of type
+ * {@link ServerHandshakeStateEvent#HANDSHAKE_COMPLETE}.
  */
-public class WebSocketServerProtocolHandler extends ChannelInboundMessageHandlerAdapter<WebSocketFrame> {
+public class WebSocketServerProtocolHandler extends WebSocketProtocolHandler {
+
+    /**
+     * Events that are fired to notify about handshake status
+     */
+    public enum ServerHandshakeStateEvent {
+        /**
+         * The Handshake was complete succesful and so the channel was upgraded to websockets
+         */
+        HANDSHAKE_COMPLETE
+    }
 
     private static final AttributeKey<WebSocketServerHandshaker> HANDSHAKER_ATTR_KEY =
             new AttributeKey<WebSocketServerHandshaker>(WebSocketServerHandshaker.class.getName());
@@ -65,7 +80,7 @@ public class WebSocketServerProtocolHandler extends ChannelInboundMessageHandler
     }
 
     @Override
-    public void afterAdd(ChannelHandlerContext ctx) {
+    public void handlerAdded(ChannelHandlerContext ctx) {
         ChannelPipeline cp = ctx.pipeline();
         if (cp.get(WebSocketServerProtocolHandshakeHandler.class) == null) {
             // Add the WebSocketHandshakeHandler before this one.
@@ -82,15 +97,7 @@ public class WebSocketServerProtocolHandler extends ChannelInboundMessageHandler
             handshaker.close(ctx.channel(), (CloseWebSocketFrame) frame);
             return;
         }
-
-        if (frame instanceof PingWebSocketFrame) {
-            frame.data().retain();
-            ctx.channel().write(new PongWebSocketFrame(frame.data()));
-            return;
-        }
-
-        frame.retain();
-        ctx.nextInboundMessageBuffer().add(frame);
+        super.messageReceived(ctx, frame);
     }
 
     @Override

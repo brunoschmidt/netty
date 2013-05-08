@@ -68,9 +68,26 @@ public abstract class ChannelStateHandlerAdapter extends ChannelHandlerAdapter i
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         ctx.fireChannelInactive();
     }
-
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelReadSuspended()} to forward
+     * to the next {@link ChannelHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
     @Override
     public void channelReadSuspended(ChannelHandlerContext ctx) throws Exception {
         ctx.fireChannelReadSuspended();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireUserEventTriggered(Object)} to forward
+     * to the next {@link ChannelHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt)
+            throws Exception {
+        ctx.fireUserEventTriggered(evt);
     }
 }

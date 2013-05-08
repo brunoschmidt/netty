@@ -60,7 +60,7 @@ public class SpdyFrameEncoder extends MessageToByteEncoder<SpdyDataOrControlFram
     }
 
     @Override
-    public void beforeAdd(ChannelHandlerContext ctx) throws Exception {
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         ctx.channel().closeFuture().addListener(new ChannelFutureListener() {
             @Override
             public void operationComplete(ChannelFuture future) throws Exception {
@@ -80,7 +80,7 @@ public class SpdyFrameEncoder extends MessageToByteEncoder<SpdyDataOrControlFram
         if (msg instanceof SpdyDataFrame) {
 
             SpdyDataFrame spdyDataFrame = (SpdyDataFrame) msg;
-            ByteBuf data = spdyDataFrame.data();
+            ByteBuf data = spdyDataFrame.content();
             byte flags = spdyDataFrame.isLast() ? SPDY_DATA_FLAG_FIN : 0;
             out.ensureWritable(SPDY_HEADER_SIZE + data.readableBytes());
             out.writeInt(spdyDataFrame.getStreamId() & 0x7FFFFFFF);

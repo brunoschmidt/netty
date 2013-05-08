@@ -21,6 +21,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.FileRegion;
 import io.netty.channel.ServerChannel;
+import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.internal.PlatformDependent;
 
 import java.util.AbstractSet;
@@ -38,8 +39,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class DefaultChannelGroup extends AbstractSet<Channel> implements ChannelGroup {
 
     private static final AtomicInteger nextId = new AtomicInteger();
-
+    private static final ImmediateEventExecutor DEFAULT_EXECUTOR = new ImmediateEventExecutor();
     private final String name;
+    private final EventExecutor executor;
     private final ConcurrentMap<Integer, Channel> serverChannels = PlatformDependent.newConcurrentHashMap();
     private final ConcurrentMap<Integer, Channel> nonServerChannels = PlatformDependent.newConcurrentHashMap();
     private final ChannelFutureListener remover = new ChannelFutureListener() {
@@ -57,15 +59,33 @@ public class DefaultChannelGroup extends AbstractSet<Channel> implements Channel
     }
 
     /**
+     * Creates a new group with a generated name amd the provided {@link EventExecutor} to notify the
+     * {@link ChannelGroupFuture}s.
+     */
+    public DefaultChannelGroup(EventExecutor executor) {
+        this("group-0x" + Integer.toHexString(nextId.incrementAndGet()), executor);
+    }
+
+    /**
      * Creates a new group with the specified {@code name}.  Please note that
      * different groups can have the same name, which means no duplicate check
      * is done against group names.
      */
     public DefaultChannelGroup(String name) {
+        this(name, DEFAULT_EXECUTOR);
+    }
+
+    /**
+     * Creates a new group with the specified {@code name} and {@link EventExecutor} to notify the
+     * {@link ChannelGroupFuture}s.  Please note that different groups can have the same name, which means no
+     * duplicate check is done against group names.
+     */
+    public DefaultChannelGroup(String name, EventExecutor executor) {
         if (name == null) {
             throw new NullPointerException("name");
         }
         this.name = name;
+        this.executor = executor;
     }
 
     @Override
@@ -187,7 +207,7 @@ public class DefaultChannelGroup extends AbstractSet<Channel> implements Channel
             futures.put(c.id(), c.close());
         }
 
-        return new DefaultChannelGroupFuture(this, futures);
+        return new DefaultChannelGroupFuture(this, futures, executor);
     }
 
     @Override
@@ -202,7 +222,7 @@ public class DefaultChannelGroup extends AbstractSet<Channel> implements Channel
             futures.put(c.id(), c.disconnect());
         }
 
-        return new DefaultChannelGroupFuture(this, futures);
+        return new DefaultChannelGroupFuture(this, futures, executor);
     }
 
     @Override
@@ -218,7 +238,7 @@ public class DefaultChannelGroup extends AbstractSet<Channel> implements Channel
         }
 
         BufUtil.release(message);
-        return new DefaultChannelGroupFuture(this, futures);
+        return new DefaultChannelGroupFuture(this, futures, executor);
     }
 
     @Override
@@ -234,7 +254,7 @@ public class DefaultChannelGroup extends AbstractSet<Channel> implements Channel
         }
 
         BufUtil.release(region);
-        return new DefaultChannelGroupFuture(this, futures);
+        return new DefaultChannelGroupFuture(this, futures, executor);
     }
 
     @Override
@@ -244,7 +264,7 @@ public class DefaultChannelGroup extends AbstractSet<Channel> implements Channel
             futures.put(c.id(), c.flush());
         }
 
-        return new DefaultChannelGroupFuture(this, futures);
+        return new DefaultChannelGroupFuture(this, futures, executor);
     }
 
     @Override
@@ -259,7 +279,7 @@ public class DefaultChannelGroup extends AbstractSet<Channel> implements Channel
             futures.put(c.id(), c.deregister());
         }
 
-        return new DefaultChannelGroupFuture(this, futures);
+        return new DefaultChannelGroupFuture(this, futures, executor);
     }
 
     @Override

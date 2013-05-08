@@ -15,6 +15,8 @@
  */
 package io.netty.buffer;
 
+import io.netty.util.internal.PlatformDependent;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.CharBuffer;
@@ -75,7 +77,7 @@ import java.util.Queue;
  */
 public final class Unpooled {
 
-    private static final ByteBufAllocator ALLOC = UnpooledByteBufAllocator.HEAP_BY_DEFAULT;
+    private static final ByteBufAllocator ALLOC = UnpooledByteBufAllocator.DEFAULT;
 
     /**
      * Big endian byte order.
@@ -90,20 +92,34 @@ public final class Unpooled {
     /**
      * A buffer whose capacity is {@code 0}.
      */
-    public static final ByteBuf EMPTY_BUFFER = EmptyByteBuf.INSTANCE_BE;
+    public static final ByteBuf EMPTY_BUFFER = ALLOC.buffer(0, 0);
 
+    /**
+     * Creates a new {@link MessageBuf} with reasonably small initial capacity, which
+     * expands its capacity boundlessly on demand.
+     */
     public static <T> MessageBuf<T> messageBuffer() {
         return new DefaultMessageBuf<T>();
     }
 
+    /**
+     * Creates a new {@link MessageBuf} with the specified {@code initialCapacity}.
+     */
     public static <T> MessageBuf<T> messageBuffer(int initialCapacity) {
         return new DefaultMessageBuf<T>(initialCapacity);
     }
 
+    /**
+     * Creates a new {@link MessageBuf} with the specified {@code initialCapacity} and
+     * {@code maxCapacity}.
+     */
     public static <T> MessageBuf<T> messageBuffer(int initialCapacity, int maxCapacity) {
         return new DefaultMessageBuf<T>(initialCapacity, maxCapacity);
     }
 
+    /**
+     * Creates a new {@link MessageBuf} which wraps the given {@code queue}.
+     */
     public static <T> MessageBuf<T> wrappedBuffer(Queue<T> queue) {
         if (queue instanceof MessageBuf) {
             return (MessageBuf<T>) queue;
@@ -206,8 +222,22 @@ public final class Unpooled {
                     buffer.array(),
                     buffer.arrayOffset() + buffer.position(),
                     buffer.remaining()).order(buffer.order());
+        } else if (PlatformDependent.hasUnsafe()) {
+            if (buffer.isReadOnly()) {
+                if (buffer.isDirect()) {
+                    return new ReadOnlyUnsafeDirectByteBuf(ALLOC, buffer);
+                } else {
+                    return new ReadOnlyByteBufferBuf(ALLOC, buffer);
+                }
+            } else {
+                return new UnpooledUnsafeDirectByteBuf(ALLOC, buffer, buffer.remaining());
+            }
         } else {
-            return new UnpooledDirectByteBuf(ALLOC, buffer, buffer.remaining());
+            if (buffer.isReadOnly()) {
+                return new ReadOnlyByteBufferBuf(ALLOC, buffer);
+            }  else {
+                return new UnpooledDirectByteBuf(ALLOC, buffer, buffer.remaining());
+            }
         }
     }
 
@@ -845,6 +875,13 @@ public final class Unpooled {
             buffer.writeDouble(v);
         }
         return buffer;
+    }
+
+    /**
+     * Return a unreleasable view on the given {@link ByteBuf} which will just ignore release and retain calls.
+     */
+    public static ByteBuf unreleasableBuffer(ByteBuf buf) {
+        return new UnreleasableByteBuf(buf);
     }
 
     private Unpooled() {

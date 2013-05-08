@@ -22,7 +22,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.AbstractChannel;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelConfig;
-import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -33,6 +32,7 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.ChannelStateHandlerAdapter;
 import io.netty.channel.DefaultChannelConfig;
 import io.netty.channel.EventLoop;
+import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -52,8 +52,8 @@ public abstract class AbstractEmbeddedChannel<O> extends AbstractChannel {
     private final ChannelConfig config = new DefaultChannelConfig(this);
     private final SocketAddress localAddress = new EmbeddedSocketAddress();
     private final SocketAddress remoteAddress = new EmbeddedSocketAddress();
-    private final MessageBuf<Object> lastInboundMessageBuffer = Unpooled.messageBuffer();
-    private final ByteBuf lastInboundByteBuffer = Unpooled.buffer();
+    private final MessageBuf<Object> lastInboundMessageBuffer = Unpooled.messageBuffer().retain(2);
+    private final ByteBuf lastInboundByteBuffer = Unpooled.buffer().retain(2);
     protected final Object lastOutboundBuffer;
     private Throwable lastException;
     private int state; // 0 = OPEN, 1 = ACTIVE, 2 = CLOSED
@@ -178,14 +178,7 @@ public abstract class AbstractEmbeddedChannel<O> extends AbstractChannel {
 
         lastException = null;
 
-        if (t instanceof RuntimeException) {
-            throw (RuntimeException) t;
-        }
-        if (t instanceof Error) {
-            throw (Error) t;
-        }
-
-        throw new ChannelException(t);
+        PlatformDependent.throwException(t);
     }
 
     protected final void ensureOpen() {
@@ -232,8 +225,8 @@ public abstract class AbstractEmbeddedChannel<O> extends AbstractChannel {
     }
 
     @Override
-    protected void doDeregister() throws Exception {
-        // NOOP
+    protected Runnable doDeregister() throws Exception {
+        return null;
     }
 
     @Override
@@ -339,11 +332,6 @@ public abstract class AbstractEmbeddedChannel<O> extends AbstractChannel {
         }
 
         @Override
-        public void freeInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-            // Do NOT free the buffer.
-        }
-
-        @Override
         public void inboundBufferUpdated(ChannelHandlerContext ctx) throws Exception {
             // Do nothing.
         }
@@ -365,11 +353,6 @@ public abstract class AbstractEmbeddedChannel<O> extends AbstractChannel {
         @Override
         public void discardInboundReadBytes(ChannelHandlerContext ctx) throws Exception {
             // nothing
-        }
-
-        @Override
-        public void freeInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-            // Do NOT free the buffer.
         }
 
         @Override

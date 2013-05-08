@@ -25,7 +25,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOperationHandler;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.ChannelStateHandlerAdapter;
-import io.netty.channel.EventExecutor;
+import io.netty.util.concurrent.EventExecutor;
 import io.netty.channel.FileRegion;
 
 import java.net.SocketAddress;
@@ -210,7 +210,7 @@ public class IdleStateHandler extends ChannelStateHandlerAdapter implements Chan
     }
 
     @Override
-    public void beforeAdd(ChannelHandlerContext ctx) throws Exception {
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         if (ctx.channel().isActive() & ctx.channel().isRegistered()) {
             // channelActvie() event has been fired already, which means this.channelActive() will
             // not be invoked. We have to initialize here instead.
@@ -222,7 +222,7 @@ public class IdleStateHandler extends ChannelStateHandlerAdapter implements Chan
     }
 
     @Override
-    public void beforeRemove(ChannelHandlerContext ctx) throws Exception {
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
         destroy();
     }
 

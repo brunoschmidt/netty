@@ -21,11 +21,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelHandlerUtil;
 import io.netty.channel.ChannelInboundByteHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
-import io.netty.channel.DefaultEventExecutorGroup;
-import io.netty.channel.EventExecutorGroup;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.util.concurrent.DefaultEventExecutorGroup;
+import io.netty.util.concurrent.EventExecutorGroup;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -54,7 +55,7 @@ public class SocketEchoTest extends AbstractSocketTest {
 
     @AfterClass
     public static void destroyGroup() {
-        group.shutdown();
+        group.shutdownGracefully();
     }
 
     @Test(timeout = 30000)
@@ -186,7 +187,7 @@ public class SocketEchoTest extends AbstractSocketTest {
 
         @Override
         public ByteBuf newInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-            return Unpooled.buffer(0, maxInboundBufferSize);
+            return ChannelHandlerUtil.allocate(ctx, 0, maxInboundBufferSize);
         }
 
         @Override

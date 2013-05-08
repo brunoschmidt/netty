@@ -21,7 +21,7 @@
   <parent>
     <groupId>io.netty</groupId>
     <artifactId>netty-parent</artifactId>
-    <version>4.0.0.Beta3-SNAPSHOT</version>
+    <version>4.0.0.CR2-SNAPSHOT</version>
   </parent>
 
   <artifactId>netty-example</artifactId>
@@ -62,6 +62,12 @@
     <dependency>
       <groupId>com.jcraft</groupId>
       <artifactId>jzlib</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.javassist</groupId>
+      <artifactId>javassist</artifactId>
+      <scope>runtime</scope>
     </dependency>
 
     <!-- see https://github.com/netty/netty/issues/874 -->

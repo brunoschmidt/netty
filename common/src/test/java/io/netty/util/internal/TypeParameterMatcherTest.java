@@ -18,6 +18,8 @@ package io.netty.util.internal;
 
 import org.junit.Test;
 
+import java.util.Date;
+
 import static org.junit.Assert.*;
 
 public class TypeParameterMatcherTest {
@@ -77,7 +79,7 @@ public class TypeParameterMatcherTest {
 
     public static class TypeY<D extends C, E extends A, F extends B> extends TypeX<E, F, D> { }
 
-    public static abstract class TypeZ<G extends AA, H extends BB> extends TypeY<CC, G, H> { }
+    public abstract static class TypeZ<G extends AA, H extends BB> extends TypeY<CC, G, H> { }
 
     public static class TypeQ<I extends BBB> extends TypeZ<AAA, I> { }
 
@@ -111,5 +113,36 @@ public class TypeParameterMatcherTest {
         TypeParameterMatcher m = TypeParameterMatcher.find(new U<byte[]>() { }, U.class, "E");
         assertFalse(m.match(new Object()));
         assertTrue(m.match(new byte[1]));
+    }
+
+    @Test
+    public void testRawType() throws Exception {
+        TypeParameterMatcher m = TypeParameterMatcher.find(new U() { }, U.class, "E");
+        assertTrue(m.match(new Object()));
+    }
+
+    private static class V<E> {
+        U<E> u = new U<E>() { };
+    }
+
+    @Test
+    public void testInnerClass() throws Exception {
+        TypeParameterMatcher m = TypeParameterMatcher.find(new V<String>().u, U.class, "E");
+        assertTrue(m.match(new Object()));
+    }
+
+    private abstract static class W<E> {
+        E e;
+    }
+
+    private static class X<T, E> extends W<E> {
+        T t;
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void testErasure() throws Exception {
+        TypeParameterMatcher m = TypeParameterMatcher.find(new X<String, Date>(), W.class, "E");
+        assertTrue(m.match(new Date()));
+        assertFalse(m.match(new Object()));
     }
 }

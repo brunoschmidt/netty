@@ -29,7 +29,7 @@ import org.osgi.framework.wiring.BundleWiring;
 /**
  * Unit Test Utilities.
  */
-public class UnitHelp {
+public final class UnitHelp {
 
     private UnitHelp() {
     }
@@ -50,9 +50,6 @@ public class UnitHelp {
                 // mavenBundle().groupId("org.ops4j.pax.logging").artifactId(
                 // "pax-logging-service"),
 
-                /** install scr annotations */
-                mavenBundle("com.carrotgarden.osgi",
-                        "carrot-osgi-anno-scr-core").versionAsInProject(),
                 /** install scr runtime provider */
                 mavenBundle("org.apache.felix", "org.apache.felix.scr")
                         .versionAsInProject(),
@@ -106,7 +103,6 @@ public class UnitHelp {
 
                 /** install java unit bundles */
                 junitBundles());
-
     }
 
     /**

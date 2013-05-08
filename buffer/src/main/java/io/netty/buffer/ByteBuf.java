@@ -108,7 +108,7 @@ import java.nio.charset.UnsupportedCharsetException;
  * <pre>
  * // Fills the writable bytes of a buffer with random integers.
  * {@link ByteBuf} buffer = ...;
- * while (buffer.writableBytes() >= 4) {
+ * while (buffer.maxWritableBytes() >= 4) {
  *     buffer.writeInt(random.nextInt());
  * }
  * </pre>
@@ -214,7 +214,7 @@ import java.nio.charset.UnsupportedCharsetException;
  *
  * If a {@link ByteBuf} can be converted into an NIO {@link ByteBuffer} which shares its
  * content (i.e. view buffer), you can get it via the {@link #nioBuffer()} method.  To determine
- * if a buffer can be converted into an NIO buffer, use {@link #nioBuffer()}.
+ * if a buffer can be converted into an NIO buffer, use {@link #nioBufferCount()}.
  *
  * <h4>Strings</h4>
  *
@@ -1834,6 +1834,20 @@ public interface ByteBuf extends Buf, Comparable<ByteBuf> {
      *         if there no accessible backing byte array
      */
     int arrayOffset();
+
+    /**
+     * Returns {@code true} if and only if this buffer has a reference to the low-level memory address that points
+     * to the backing data.
+     */
+    boolean hasMemoryAddress();
+
+    /**
+     * Returns the low-level memory address that point to the first byte of ths backing data.
+     *
+     * @throws UnsupportedOperationException
+     *         if this buffer does not support accessing the low-level memory address
+     */
+    long memoryAddress();
 
     /**
      * Decodes this buffer's readable bytes into a string with the specified

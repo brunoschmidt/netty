@@ -36,7 +36,8 @@ public class HttpPostRequestDecoderTest {
     public void testBinaryStreamUpload() throws Exception {
         final String boundary = "dLV9Wyq26L_-JQxk6ferf-RT153LhOO";
 
-        final DefaultHttpRequest req = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "http://localhost");
+        final DefaultHttpRequest req = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST,
+                "http://localhost");
 
         req.setDecoderResult(DecoderResult.SUCCESS);
         req.headers().add(HttpHeaders.Names.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
@@ -77,7 +78,8 @@ public class HttpPostRequestDecoderTest {
     public void testFullHttpRequestUpload() throws Exception {
         final String boundary = "dLV9Wyq26L_-JQxk6ferf-RT153LhOO";
 
-        final DefaultFullHttpRequest req = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "http://localhost");
+        final DefaultFullHttpRequest req = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST,
+                "http://localhost");
 
         req.setDecoderResult(DecoderResult.SUCCESS);
         req.headers().add(HttpHeaders.Names.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
@@ -95,11 +97,10 @@ public class HttpPostRequestDecoderTest {
                             data + "\r\n" +
                             "--" + boundary + "--\r\n";
 
-            req.data().writeBytes(body.getBytes(CharsetUtil.UTF_8));
+            req.content().writeBytes(body.getBytes(CharsetUtil.UTF_8));
         }
         // Create decoder instance to test.
         final HttpPostRequestDecoder decoder = new HttpPostRequestDecoder(inMemoryFactory, req);
         assertFalse(decoder.getBodyHttpDatas().isEmpty());
-
     }
 }

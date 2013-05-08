@@ -40,8 +40,14 @@ import io.netty.channel.ChannelOutboundMessageHandlerAdapter;
  */
 public abstract class MessageToByteEncoder<I> extends ChannelOutboundMessageHandlerAdapter<I> {
 
+    protected MessageToByteEncoder() { }
+
+    protected MessageToByteEncoder(Class<? extends I> outboundMessageType) {
+        super(outboundMessageType);
+    }
+
     @Override
-    protected void flush(ChannelHandlerContext ctx, I msg) throws Exception {
+    public void flush(ChannelHandlerContext ctx, I msg) throws Exception {
         try {
             encode(ctx, msg, ctx.nextOutboundByteBuffer());
         } catch (CodecException e) {

@@ -15,14 +15,15 @@
  */
 package io.netty.handler.codec.compression;
 
+import com.jcraft.jzlib.Deflater;
+import com.jcraft.jzlib.JZlib;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
-import com.jcraft.jzlib.JZlib;
-import com.jcraft.jzlib.Deflater;
+import io.netty.util.internal.EmptyArrays;
 
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,8 +33,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Compresses a {@link ByteBuf} using the deflate algorithm.
  */
 public class JZlibEncoder extends ZlibEncoder {
-
-    private static final byte[] EMPTY_ARRAY = new byte[0];
 
     private final Deflater z = new Deflater();
     private final AtomicBoolean finished = new AtomicBoolean();
@@ -367,7 +366,7 @@ public class JZlibEncoder extends ZlibEncoder {
         synchronized (z) {
             try {
                 // Configure input.
-                z.next_in = EMPTY_ARRAY;
+                z.next_in = EmptyArrays.EMPTY_BYTES;
                 z.next_in_index = 0;
                 z.avail_in = 0;
 
@@ -380,7 +379,7 @@ public class JZlibEncoder extends ZlibEncoder {
                 // Write the ADLER32 checksum (stream footer).
                 int resultCode = z.deflate(JZlib.Z_FINISH);
                 if (resultCode != JZlib.Z_OK && resultCode != JZlib.Z_STREAM_END) {
-                    future.setFailure(ZlibUtil.exception(z, "compression failure", resultCode));
+                    future.setFailure(ZlibUtil.deflaterException(z, "compression failure", resultCode));
                     return future;
                 } else if (z.next_out_index != 0) {
                     footer = Unpooled.wrappedBuffer(out, 0, z.next_out_index);
@@ -404,7 +403,7 @@ public class JZlibEncoder extends ZlibEncoder {
     }
 
     @Override
-    public void beforeAdd(ChannelHandlerContext ctx) throws Exception {
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         this.ctx = ctx;
     }
 }
