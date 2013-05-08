@@ -18,7 +18,6 @@ package io.netty.util.internal;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.GenericArrayType;
-import java.lang.reflect.GenericDeclaration;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
@@ -31,37 +30,27 @@ public abstract class TypeParameterMatcher {
     private static final TypeParameterMatcher NOOP = new NoOpTypeParameterMatcher();
     private static final Object TEST_OBJECT = new Object();
 
-    private static final ThreadLocal<Map<Class<?>, Map<String, TypeParameterMatcher>>> typeMap =
-            new ThreadLocal<Map<Class<?>, Map<String, TypeParameterMatcher>>>() {
+    private static final ThreadLocal<Map<Class<?>, TypeParameterMatcher>> getCache =
+            new ThreadLocal<Map<Class<?>, TypeParameterMatcher>>() {
                 @Override
-                protected Map<Class<?>, Map<String, TypeParameterMatcher>> initialValue() {
-                    return new IdentityHashMap<Class<?>, Map<String, TypeParameterMatcher>>();
+                protected Map<Class<?>, TypeParameterMatcher> initialValue() {
+                    return new IdentityHashMap<Class<?>, TypeParameterMatcher>();
                 }
             };
 
-    public static TypeParameterMatcher find(
-            final Object object, final GenericDeclaration parameterizedSuperclass, final String typeParamName) {
+    public static TypeParameterMatcher get(final Class<?> parameterType) {
+        final Map<Class<?>, TypeParameterMatcher> getCache = TypeParameterMatcher.getCache.get();
 
-        final Map<Class<?>, Map<String, TypeParameterMatcher>> typeMap = TypeParameterMatcher.typeMap.get();
-        final Class<?> thisClass = object.getClass();
-
-        Map<String, TypeParameterMatcher> map = typeMap.get(thisClass);
-        if (map == null) {
-            map = new HashMap<String, TypeParameterMatcher>();
-            typeMap.put(thisClass, map);
-        }
-
-        TypeParameterMatcher matcher = map.get(typeParamName);
+        TypeParameterMatcher matcher = getCache.get(parameterType);
         if (matcher == null) {
-            Class<?> messageType = find0(object, parameterizedSuperclass, typeParamName);
-            if (messageType == Object.class) {
+            if (parameterType == Object.class) {
                 matcher = NOOP;
             } else if (PlatformDependent.hasJavassist()) {
                 try {
-                    matcher = JavassistTypeParameterMatcherGenerator.generate(messageType);
+                    matcher = JavassistTypeParameterMatcherGenerator.generate(parameterType);
                     matcher.match(TEST_OBJECT);
                 } catch (IllegalAccessError e) {
-                    // Happens if messageType is not public.
+                    // Happens if parameterType is not public.
                     matcher = null;
                 } catch (Exception e) {
                     // Will not usually happen, but just in case.
@@ -70,9 +59,38 @@ public abstract class TypeParameterMatcher {
             }
 
             if (matcher == null) {
-                matcher = new ReflectiveMatcher(messageType);
+                matcher = new ReflectiveMatcher(parameterType);
             }
 
+            getCache.put(parameterType, matcher);
+        }
+
+        return matcher;
+    }
+
+    private static final ThreadLocal<Map<Class<?>, Map<String, TypeParameterMatcher>>> findCache =
+            new ThreadLocal<Map<Class<?>, Map<String, TypeParameterMatcher>>>() {
+                @Override
+                protected Map<Class<?>, Map<String, TypeParameterMatcher>> initialValue() {
+                    return new IdentityHashMap<Class<?>, Map<String, TypeParameterMatcher>>();
+                }
+            };
+
+    public static TypeParameterMatcher find(
+            final Object object, final Class<?> parameterizedSuperclass, final String typeParamName) {
+
+        final Map<Class<?>, Map<String, TypeParameterMatcher>> findCache = TypeParameterMatcher.findCache.get();
+        final Class<?> thisClass = object.getClass();
+
+        Map<String, TypeParameterMatcher> map = findCache.get(thisClass);
+        if (map == null) {
+            map = new HashMap<String, TypeParameterMatcher>();
+            findCache.put(thisClass, map);
+        }
+
+        TypeParameterMatcher matcher = map.get(typeParamName);
+        if (matcher == null) {
+            matcher = get(find0(object, parameterizedSuperclass, typeParamName));
             map.put(typeParamName, matcher);
         }
 
@@ -80,7 +98,7 @@ public abstract class TypeParameterMatcher {
     }
 
     private static Class<?> find0(
-            final Object object, GenericDeclaration parameterizedSuperclass, String typeParamName) {
+            final Object object, Class<?> parameterizedSuperclass, String typeParamName) {
 
         final Class<?> thisClass = object.getClass();
         Class<?> currentClass = thisClass;
@@ -100,8 +118,12 @@ public abstract class TypeParameterMatcher {
                             "unknown type parameter '" + typeParamName + "': " + parameterizedSuperclass);
                 }
 
-                Type[] actualTypeParams =
-                        ((ParameterizedType) currentClass.getGenericSuperclass()).getActualTypeArguments();
+                Type genericSuperType = currentClass.getGenericSuperclass();
+                if (!(genericSuperType instanceof ParameterizedType)) {
+                    return Object.class;
+                }
+
+                Type[] actualTypeParams = ((ParameterizedType) genericSuperType).getActualTypeArguments();
 
                 Type actualTypeParam = actualTypeParams[typeParamIndex];
                 if (actualTypeParam instanceof ParameterizedType) {
@@ -123,9 +145,17 @@ public abstract class TypeParameterMatcher {
                     // Resolved type parameter points to another type parameter.
                     TypeVariable<?> v = (TypeVariable<?>) actualTypeParam;
                     currentClass = thisClass;
-                    parameterizedSuperclass = v.getGenericDeclaration();
+                    if (!(v.getGenericDeclaration() instanceof Class)) {
+                        return Object.class;
+                    }
+
+                    parameterizedSuperclass = (Class<?>) v.getGenericDeclaration();
                     typeParamName = v.getName();
-                    continue;
+                    if (parameterizedSuperclass.isAssignableFrom(thisClass)) {
+                        continue;
+                    } else {
+                        return Object.class;
+                    }
                 }
 
                 return fail(thisClass, typeParamName);

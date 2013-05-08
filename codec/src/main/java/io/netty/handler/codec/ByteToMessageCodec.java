@@ -42,13 +42,13 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler
 
     private final ByteToMessageDecoder decoder = new ByteToMessageDecoder() {
         @Override
-        public Object decode(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
-            return ByteToMessageCodec.this.decode(ctx, in);
+        public void decode(ChannelHandlerContext ctx, ByteBuf in, MessageBuf<Object> out) throws Exception {
+            ByteToMessageCodec.this.decode(ctx, in, out);
         }
 
         @Override
-        protected Object decodeLast(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
-            return ByteToMessageCodec.this.decodeLast(ctx, in);
+        protected void decodeLast(ChannelHandlerContext ctx, ByteBuf in, MessageBuf<Object> out) throws Exception {
+            ByteToMessageCodec.this.decodeLast(ctx, in, out);
         }
     };
 
@@ -56,9 +56,8 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler
         outboundMsgMatcher = TypeParameterMatcher.find(this, ByteToMessageCodec.class, "I");
     }
 
-    @Override
-    public void beforeAdd(ChannelHandlerContext ctx) throws Exception {
-        decoder.beforeAdd(ctx);
+    protected ByteToMessageCodec(Class<? extends I> outboundMessageType) {
+        outboundMsgMatcher = TypeParameterMatcher.get(outboundMessageType);
     }
 
     @Override
@@ -72,18 +71,8 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler
     }
 
     @Override
-    public void freeInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        decoder.freeInboundBuffer(ctx);
-    }
-
-    @Override
     public MessageBuf<I> newOutboundBuffer(ChannelHandlerContext ctx) throws Exception {
         return encoder.newOutboundBuffer(ctx);
-    }
-
-    @Override
-    public void freeOutboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        encoder.freeOutboundBuffer(ctx);
     }
 
     @Override
@@ -101,8 +90,8 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler
     }
 
     protected abstract void encode(ChannelHandlerContext ctx, I msg, ByteBuf out) throws Exception;
-    protected abstract Object decode(ChannelHandlerContext ctx, ByteBuf in) throws Exception;
-    protected Object decodeLast(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
-        return decode(ctx, in);
+    protected abstract void decode(ChannelHandlerContext ctx, ByteBuf in, MessageBuf<Object> out) throws Exception;
+    protected void decodeLast(ChannelHandlerContext ctx, ByteBuf in, MessageBuf<Object> out) throws Exception {
+        decode(ctx, in, out);
     }
 }

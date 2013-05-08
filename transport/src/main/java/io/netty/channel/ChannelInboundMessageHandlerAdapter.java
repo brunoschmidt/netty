@@ -15,9 +15,10 @@
  */
 package io.netty.channel;
 
-import io.netty.buffer.BufUtil;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.MessageBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandlerUtil.SingleInboundMessageHandler;
 import io.netty.util.Signal;
 import io.netty.util.internal.TypeParameterMatcher;
 
@@ -27,9 +28,6 @@ import io.netty.util.internal.TypeParameterMatcher;
  * <pre>
  *     public class StringHandler extends
  *             {@link ChannelInboundMessageHandlerAdapter}&lt;{@link String}&gt; {
- *         public StringToIntegerDecoder() {
- *             super(String.class);
- *         }
  *
  *         {@code @Override}
  *         public void messageReceived({@link ChannelHandlerContext} ctx, {@link String} message)
@@ -41,20 +39,55 @@ import io.netty.util.internal.TypeParameterMatcher;
  *     }
  * </pre>
  *
+ * If your {@link ChannelInboundMessageHandlerAdapter} handles messages of type {@link ByteBuf} or {@link Object}
+ * and you want to add a {@link ByteBuf} to the next buffer in the {@link ChannelPipeline} use
+ * {@link ChannelHandlerUtil#addToNextInboundBuffer(ChannelHandlerContext, Object)}.
+ *
+ * <p>
+ * One limitation to keep in mind is that it is not possible to detect the handled message type of you specify
+ * {@code I} while instance your class. Because of this Netty does not allow to do so and will throw an Exception
+ * if you try. For this cases you should handle the type detection by your self by override the
+ * {@link #acceptInboundMessage(Object)} method and use {@link Object} as type parameter.
+ *
+ * <pre>
+ *    public class GenericHandler&lt;I&gt; extends
+ *             {@link ChannelInboundMessageHandlerAdapter}&lt;{@link Object}&gt; {
+ *
+ *         {@code @Override}
+ *         public void messageReceived({@link ChannelHandlerContext} ctx, {@link Object} message)
+ *                 throws {@link Exception} {
+ *             I msg = (I) message;
+ *             // Do something with the msg
+ *             ...
+ *             ...
+ *         }
+ *
+ *         {@code @Override}
+ *         public boolean acceptInboundMessage(Object msg) throws Exception {
+ *             // Add your check here
+ *         }
+ *     }
+ * </pre>
+ *
  * @param <I>   The type of the messages to handle
  */
 public abstract class ChannelInboundMessageHandlerAdapter<I>
-        extends ChannelStateHandlerAdapter implements ChannelInboundMessageHandler<I> {
+        extends ChannelStateHandlerAdapter
+        implements ChannelInboundMessageHandler<I>, SingleInboundMessageHandler<I> {
 
     /**
      * Thrown by {@link #messageReceived(ChannelHandlerContext, Object)} to abort message processing.
      */
-    protected static final Signal ABORT = new Signal(ChannelInboundMessageHandlerAdapter.class.getName() + ".ABORT");
+    protected static final Signal ABORT = ChannelHandlerUtil.ABORT;
 
     private final TypeParameterMatcher msgMatcher;
 
     protected ChannelInboundMessageHandlerAdapter() {
         msgMatcher = TypeParameterMatcher.find(this, ChannelInboundMessageHandlerAdapter.class, "I");
+    }
+
+    protected ChannelInboundMessageHandlerAdapter(Class<? extends I> inboundMessageType) {
+        msgMatcher = TypeParameterMatcher.get(inboundMessageType);
     }
 
     @Override
@@ -63,105 +96,22 @@ public abstract class ChannelInboundMessageHandlerAdapter<I>
     }
 
     @Override
-    public void freeInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        ctx.inboundMessageBuffer().release();
+    public final void inboundBufferUpdated(ChannelHandlerContext ctx) throws Exception {
+        ChannelHandlerUtil.handleInboundBufferUpdated(ctx, this);
     }
 
     @Override
-    public final void inboundBufferUpdated(ChannelHandlerContext ctx) throws Exception {
-        MessageBuf<Object> in = ctx.inboundMessageBuffer();
-        if (in.isEmpty() || !beginMessageReceived(ctx)) {
-            return;
-        }
-
-        MessageBuf<Object> out = ctx.nextInboundMessageBuffer();
-        int oldOutSize = out.size();
-        try {
-            boolean unsupportedFound = false;
-            for (;;) {
-                Object msg = in.poll();
-                if (msg == null) {
-                    break;
-                }
-
-                if (!acceptInboundMessage(msg)) {
-                    out.add(msg);
-                    unsupportedFound = true;
-                    continue;
-                }
-
-                if (unsupportedFound) {
-                    // the last message were unsupported, but now we received one that is supported.
-                    // So reset the flag and notify the next context
-                    unsupportedFound = false;
-                    ctx.fireInboundBufferUpdated();
-                    oldOutSize = out.size();
-                }
-
-                @SuppressWarnings("unchecked")
-                I imsg = (I) msg;
-                try {
-                    messageReceived(ctx, imsg);
-                } catch (Signal abort) {
-                    abort.expect(ABORT);
-                    break;
-                } finally {
-                    BufUtil.release(imsg);
-                }
-            }
-        } catch (Throwable t) {
-            exceptionCaught(ctx, t);
-        } finally {
-            if (oldOutSize != out.size()) {
-                ctx.fireInboundBufferUpdated();
-            }
-
-            endMessageReceived(ctx);
-        }
-    }
-
-    /**
-     * Returns {@code true} if and only if the specified message can be handled by this handler.
-     *
-     * @param msg the message
-     */
-    protected boolean acceptInboundMessage(Object msg) throws Exception {
+    public boolean acceptInboundMessage(Object msg) throws Exception {
         return msgMatcher.match(msg);
     }
 
-    /**
-     * Will get notified once {@link #inboundBufferUpdated(ChannelHandlerContext)} was called.
-     *
-     * If this method returns {@code false} no further processing of the {@link MessageBuf}
-     * will be done until the next call of {@link #inboundBufferUpdated(ChannelHandlerContext)}.
-     *
-     * This will return {@code true} by default, and may get overriden by sub-classes for
-     * special handling.
-     *
-     * @param ctx           the {@link ChannelHandlerContext} which this {@link ChannelHandler} belongs to
-     */
-    protected boolean beginMessageReceived(
-            @SuppressWarnings("UnusedParameters") ChannelHandlerContext ctx) throws Exception {
+    @Override
+    public boolean beginMessageReceived(ChannelHandlerContext ctx) throws Exception {
         return true;
     }
 
-    /**
-     * Is called once a message was received.
-     *
-     * @param ctx           the {@link ChannelHandlerContext} which this {@link ChannelHandler} belongs to
-     * @param msg           the message to handle
-     */
-    protected abstract void messageReceived(ChannelHandlerContext ctx, I msg) throws Exception;
-
-    /**
-     * Is called when {@link #messageReceived(ChannelHandlerContext, Object)} returns.
-     *
-     * Super-classes may-override this for special handling.
-     *
-     * @param ctx           the {@link ChannelHandlerContext} which this {@link ChannelHandler} belongs to
-     */
-    protected void endMessageReceived(
-            @SuppressWarnings("UnusedParameters") ChannelHandlerContext ctx) throws Exception {
+    @Override
+    public void endMessageReceived(ChannelHandlerContext ctx) throws Exception {
         // NOOP
     }
 }

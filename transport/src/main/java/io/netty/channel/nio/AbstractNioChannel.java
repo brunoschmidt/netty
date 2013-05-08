@@ -19,6 +19,7 @@ import io.netty.channel.AbstractChannel;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelPromise;
+import io.netty.channel.ConnectTimeoutException;
 import io.netty.channel.EventLoop;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
@@ -26,7 +27,6 @@ import io.netty.util.internal.logging.InternalLoggerFactory;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.SocketAddress;
-import java.net.SocketTimeoutException;
 import java.nio.channels.CancelledKeyException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
@@ -184,8 +184,8 @@ public abstract class AbstractNioChannel extends AbstractChannel {
                                 @Override
                                 public void run() {
                                     ChannelPromise connectPromise = AbstractNioChannel.this.connectPromise;
-                                    SocketTimeoutException cause =
-                                            new SocketTimeoutException("connection timed out: " + remoteAddress);
+                                    ConnectTimeoutException cause =
+                                            new ConnectTimeoutException("connection timed out: " + remoteAddress);
                                     if (connectPromise != null && connectPromise.tryFailure(cause)) {
                                         close(voidFuture());
                                     }
@@ -273,8 +273,9 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     }
 
     @Override
-    protected void doDeregister() throws Exception {
+    protected Runnable doDeregister() throws Exception {
         eventLoop().cancel(selectionKey());
+        return null;
     }
 
     @Override
@@ -295,7 +296,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     }
 
     /**
-     * Conect to the remote peer
+     * Connect to the remote peer
      */
     protected abstract boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception;
 

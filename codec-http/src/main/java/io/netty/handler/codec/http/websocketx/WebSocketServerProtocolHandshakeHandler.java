@@ -35,7 +35,7 @@ import static io.netty.handler.codec.http.HttpVersion.*;
 /**
  * Handles the HTTP handshake (the HTTP Upgrade request) for {@link WebSocketServerProtocolHandler}.
  */
-public class WebSocketServerProtocolHandshakeHandler
+class WebSocketServerProtocolHandshakeHandler
         extends ChannelInboundMessageHandlerAdapter<FullHttpRequest> {
 
     private final String websocketPath;
@@ -68,6 +68,9 @@ public class WebSocketServerProtocolHandshakeHandler
                 public void operationComplete(ChannelFuture future) throws Exception {
                     if (!future.isSuccess()) {
                         ctx.fireExceptionCaught(future.cause());
+                    } else {
+                        ctx.fireUserEventTriggered(
+                                WebSocketServerProtocolHandler.ServerHandshakeStateEvent.HANDSHAKE_COMPLETE);
                     }
                 }
             });

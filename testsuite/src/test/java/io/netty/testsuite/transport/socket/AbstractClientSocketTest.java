@@ -45,8 +45,7 @@ public abstract class AbstractClientSocketTest {
         int i = 0;
         for (Factory<Bootstrap> e: COMBO) {
             cb = e.newInstance();
-            addr = new InetSocketAddress(
-                    NetUtil.LOCALHOST, TestUtils.getFreePort());
+            addr = new InetSocketAddress(NetUtil.LOCALHOST, TestUtils.getFreePort());
             cb.remoteAddress(addr);
 
             logger.info(String.format(
@@ -57,8 +56,6 @@ public abstract class AbstractClientSocketTest {
                 m.invoke(this, cb);
             } catch (InvocationTargetException ex) {
                 throw ex.getCause();
-            } finally {
-                cb.shutdown();
             }
         }
     }

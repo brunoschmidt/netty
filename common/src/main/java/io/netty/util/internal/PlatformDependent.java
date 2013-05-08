@@ -15,8 +15,14 @@
  */
 package io.netty.util.internal;
 
+import io.netty.util.CharsetUtil;
 import io.netty.util.internal.chmv8.ConcurrentHashMapV8;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -39,7 +45,7 @@ import java.util.regex.Pattern;
  */
 public final class PlatformDependent {
 
-    private static final ClassLoader LOADER = ClassLoader.getSystemClassLoader();
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(PlatformDependent.class);
 
     private static final boolean IS_ANDROID = isAndroid0();
     private static final boolean IS_WINDOWS = isWindows0();
@@ -51,12 +57,25 @@ public final class PlatformDependent {
 
     private static final boolean HAS_UNSAFE = hasUnsafe0();
     private static final boolean CAN_USE_CHM_V8 = HAS_UNSAFE && JAVA_VERSION < 8;
-    private static final boolean CAN_FREE_DIRECT_BUFFER = canFreeDirectBuffer0();
-    private static final boolean UNSAFE_HASE_COPY_METHODS = unsafeHasCopyMethods0();
-    private static final boolean IS_UNALIGNED = isUnaligned0();
+    private static final boolean DIRECT_BUFFER_PREFERRED =
+            HAS_UNSAFE && SystemPropertyUtil.getBoolean("io.netty.preferDirect", false);
+
     private static final long ARRAY_BASE_OFFSET = arrayBaseOffset0();
 
     private static final boolean HAS_JAVASSIST = hasJavassist0();
+
+    static {
+        if (logger.isDebugEnabled()) {
+            logger.debug("io.netty.preferDirect: {}", DIRECT_BUFFER_PREFERRED);
+        }
+
+        if (!hasUnsafe()) {
+            logger.info(
+                    "Your platform does not provide complete low-level API for accessing direct buffers reliably. " +
+                    "Unless explicitly requested, heap buffer will always be preferred to avoid potential system " +
+                    "unstability.");
+        }
+    }
 
     /**
      * Returns {@code true} if and only if the current platform is Android
@@ -95,32 +114,19 @@ public final class PlatformDependent {
     }
 
     /**
-     * Return {@code true} if {@code sun.misc.Unsafe} was found on the classpath and can be used.
+     * Return {@code true} if {@code sun.misc.Unsafe} was found on the classpath and can be used for acclerated
+     * direct memory access.
      */
     public static boolean hasUnsafe() {
         return HAS_UNSAFE;
     }
 
     /**
-     * Return {@code true} if direct buffers can be freed using an optimized way and so memory footprint will be very
-     * small.
+     * Returns {@code true} if the platform has reliable low-level direct buffer access API and a user specified
+     * {@code -Dio.netty.preferDirect} option.
      */
-    public static boolean canFreeDirectBuffer() {
-        return CAN_FREE_DIRECT_BUFFER;
-    }
-
-    /**
-     * Returns {@code true} if and only if {@code java.nio.Bits.unaligned()} is true.
-     */
-    public static boolean isUnaligned() {
-        return IS_UNALIGNED;
-    }
-
-    /**
-     * Returns {@code true} if unsafe has all needed copy methods which is not the case on latest openjdk6 atm.
-     */
-    public static boolean unsafeHasCopyMethods() {
-        return UNSAFE_HASE_COPY_METHODS;
+    public static boolean directBufferPreferred() {
+        return DIRECT_BUFFER_PREFERRED;
     }
 
     /**
@@ -128,6 +134,22 @@ public final class PlatformDependent {
      */
     public static boolean hasJavassist() {
         return HAS_JAVASSIST;
+    }
+
+    /**
+     * Raises an exception bypassing compiler checks for checked exceptions.
+     */
+    public static void throwException(Throwable t) {
+        if (hasUnsafe()) {
+            PlatformDependent0.throwException(t);
+        } else {
+            PlatformDependent.<RuntimeException>throwException0(t);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <E extends Throwable> void throwException0(Throwable t) throws E {
+        throw (E) t;
     }
 
     /**
@@ -186,22 +208,26 @@ public final class PlatformDependent {
         }
     }
 
-    public static long directBufferAddress(ByteBuffer buffer) {
-        return PlatformDependent0.directBufferAddress(buffer);
-    }
-
     /**
      * Try to deallocate the specified direct {@link ByteBuffer}.  Please note this method does nothing if
      * the current platform does not support this operation or the specified buffer is not a direct buffer.
      */
     public static void freeDirectBuffer(ByteBuffer buffer) {
-        if (canFreeDirectBuffer() && buffer.isDirect()) {
+        if (buffer.isDirect()) {
             PlatformDependent0.freeDirectBuffer(buffer);
         }
     }
 
+    public static long directBufferAddress(ByteBuffer buffer) {
+        return PlatformDependent0.directBufferAddress(buffer);
+    }
+
     public static Object getObject(Object object, long fieldOffset) {
         return PlatformDependent0.getObject(object, fieldOffset);
+    }
+
+    public static int getInt(Object object, long fieldOffset) {
+        return PlatformDependent0.getInt(object, fieldOffset);
     }
 
     public static long objectFieldOffset(Field field) {
@@ -255,85 +281,161 @@ public final class PlatformDependent {
     private static boolean isAndroid0() {
         boolean android;
         try {
-            Class.forName("android.app.Application", false, LOADER);
+            Class.forName("android.app.Application", false, ClassLoader.getSystemClassLoader());
             android = true;
         } catch (Exception e) {
             android = false;
+        }
+
+        if (android) {
+            logger.debug("Platform: Android");
         }
         return android;
     }
 
     private static boolean isWindows0() {
-        return SystemPropertyUtil.get("os.name", "").toLowerCase(Locale.US).contains("win");
+        boolean windows = SystemPropertyUtil.get("os.name", "").toLowerCase(Locale.US).contains("win");
+        if (windows) {
+            logger.debug("Platform: Windows");
+        }
+        return windows;
     }
 
     private static boolean isRoot0() {
-        Pattern PERMISSION_DENIED = Pattern.compile(".*permission.*denied.*");
-        boolean root = false;
-        if (!isWindows()) {
-            for (int i = 1023; i > 0; i --) {
-                ServerSocket ss = null;
-                try {
-                    ss = new ServerSocket();
-                    ss.setReuseAddress(true);
-                    ss.bind(new InetSocketAddress(i));
-                    root = true;
-                    break;
-                } catch (Exception e) {
-                    // Failed to bind.
-                    // Check the error message so that we don't always need to bind 1023 times.
-                    String message = e.getMessage();
-                    if (message == null) {
-                        message = "";
-                    }
-                    message = message.toLowerCase();
-                    if (PERMISSION_DENIED.matcher(message).matches()) {
-                        break;
-                    }
-                } finally {
-                    if (ss != null) {
-                        try {
-                            ss.close();
-                        } catch (Exception e) {
-                            // Ignore.
+        if (isWindows()) {
+            return false;
+        }
+
+        String[] ID_COMMANDS = { "/usr/bin/id", "/bin/id", "id" };
+        Pattern UID_PATTERN = Pattern.compile("^(?:0|[1-9][0-9]*)$");
+        for (String idCmd: ID_COMMANDS) {
+            Process p = null;
+            BufferedReader in = null;
+            String uid = null;
+            try {
+                p = Runtime.getRuntime().exec(new String[] { idCmd, "-u" });
+                in = new BufferedReader(new InputStreamReader(p.getInputStream(), CharsetUtil.US_ASCII));
+                uid = in.readLine();
+                in.close();
+
+                for (;;) {
+                    try {
+                        int exitCode = p.waitFor();
+                        if (exitCode != 0) {
+                            uid = null;
                         }
+                        break;
+                    } catch (InterruptedException e) {
+                        // Ignore
+                    }
+                }
+            } catch (Exception e) {
+                uid = null;
+            } finally {
+                if (in != null) {
+                    try {
+                        in.close();
+                    } catch (IOException e) {
+                        // Ignore
+                    }
+                }
+                if (p != null) {
+                    p.destroy();
+                }
+            }
+
+            if (uid != null && UID_PATTERN.matcher(uid).matches()) {
+                logger.debug("UID: {}", uid);
+                return "0".equals(uid);
+            }
+        }
+
+        logger.debug("Could not determine the current UID using /usr/bin/id; attempting to bind at privileged ports.");
+
+        Pattern PERMISSION_DENIED = Pattern.compile(".*(?:denied|not.*permitted).*");
+        for (int i = 1023; i > 0; i --) {
+            ServerSocket ss = null;
+            try {
+                ss = new ServerSocket();
+                ss.setReuseAddress(true);
+                ss.bind(new InetSocketAddress(i));
+                if (logger.isDebugEnabled()) {
+                    logger.debug("UID: 0 (succeded to bind at port {})", i);
+                }
+                return true;
+            } catch (Exception e) {
+                // Failed to bind.
+                // Check the error message so that we don't always need to bind 1023 times.
+                String message = e.getMessage();
+                if (message == null) {
+                    message = "";
+                }
+                message = message.toLowerCase();
+                if (PERMISSION_DENIED.matcher(message).matches()) {
+                    break;
+                }
+            } finally {
+                if (ss != null) {
+                    try {
+                        ss.close();
+                    } catch (Exception e) {
+                        // Ignore.
                     }
                 }
             }
         }
-        return root;
+
+        logger.debug("UID: non-root (failed to bind at any privileged ports)");
+        return false;
     }
 
+    @SuppressWarnings("LoopStatementThatDoesntLoop")
     private static int javaVersion0() {
-        // Android
-        if (isAndroid()) {
-            return 6;
+        int javaVersion;
+
+        // Not really a loop
+        for (;;) {
+            // Android
+            if (isAndroid()) {
+                javaVersion = 6;
+                break;
+            }
+
+            try {
+                Class.forName("java.time.Clock", false, Object.class.getClassLoader());
+                javaVersion = 8;
+                break;
+            } catch (Exception e) {
+                // Ignore
+            }
+
+            try {
+                Class.forName("java.util.concurrent.LinkedTransferQueue", false, BlockingQueue.class.getClassLoader());
+                javaVersion = 7;
+                break;
+            } catch (Exception e) {
+                // Ignore
+            }
+
+            javaVersion = 6;
+            break;
         }
 
-        try {
-            Class.forName("java.time.Clock", false, Object.class.getClassLoader());
-            return 8;
-        } catch (Exception e) {
-            // Ignore
+        if (logger.isDebugEnabled()) {
+            logger.debug("Java version: {}", javaVersion);
         }
-
-        try {
-            Class.forName("java.util.concurrent.LinkedTransferQueue", false, BlockingQueue.class.getClassLoader());
-            return 7;
-        } catch (Exception e) {
-            // Ignore
-        }
-
-        return 6;
+        return javaVersion;
     }
 
     private static boolean hasUnsafe0() {
         if (isAndroid()) {
+            logger.debug("sun.misc.Unsafe: unavailable (Android)");
             return false;
         }
 
         boolean noUnsafe = SystemPropertyUtil.getBoolean("io.netty.noUnsafe", false);
         if (noUnsafe) {
+            logger.debug("sun.misc.Unsafe: unavailable (io.netty.noUnsafe)");
             return false;
         }
 
@@ -346,35 +448,19 @@ public final class PlatformDependent {
         }
 
         if (!tryUnsafe) {
+            logger.debug("sun.misc.Unsafe: unavailable (io.netty.tryUnsafe/org.jboss.netty.tryUnsafe)");
             return false;
         }
 
-        return PlatformDependent0.hasUnsafe();
-    }
-
-    private static boolean canFreeDirectBuffer0() {
-        if (isAndroid()) {
+        try {
+            boolean hasUnsafe = PlatformDependent0.hasUnsafe();
+            logger.debug("sun.misc.Unsafe: {}", hasUnsafe ? "available" : "unavailable");
+            return hasUnsafe;
+        } catch (Throwable t) {
             return false;
         }
-
-        return PlatformDependent0.canFreeDirectBuffer();
     }
 
-    private static boolean isUnaligned0() {
-        if (!hasUnsafe()) {
-            return false;
-        }
-
-        return PlatformDependent0.isUnaligned();
-    }
-
-    private static boolean unsafeHasCopyMethods0() {
-        if (!hasUnsafe()) {
-            return false;
-        }
-
-        return PlatformDependent0.hasCopyMethods();
-    }
     private static long arrayBaseOffset0() {
         if (!hasUnsafe()) {
             return -1;
@@ -386,13 +472,19 @@ public final class PlatformDependent {
     private static boolean hasJavassist0() {
         boolean noJavassist = SystemPropertyUtil.getBoolean("io.netty.noJavassist", false);
         if (noJavassist) {
+            logger.debug("Javassist: unavailable (io.netty.noJavassist)");
             return false;
         }
 
         try {
             JavassistTypeParameterMatcherGenerator.generate(Object.class, PlatformDependent.class.getClassLoader());
+            logger.debug("Javassist: available");
             return true;
         } catch (Throwable t) {
+            logger.debug("Javassist: unavailable");
+            logger.info(
+                    "You don't have Javassist in your class path or you don't have enough permission " +
+                    "to load dynamically generated classes.  Please check the configuration for better performance.");
             return false;
         }
     }

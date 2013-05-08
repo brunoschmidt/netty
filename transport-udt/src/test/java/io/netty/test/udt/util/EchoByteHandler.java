@@ -20,6 +20,7 @@ import com.yammer.metrics.core.Meter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelHandlerUtil;
 import io.netty.channel.ChannelInboundByteHandlerAdapter;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.udt.nio.NioUdtProvider;
@@ -52,7 +53,6 @@ public class EchoByteHandler extends ChannelInboundByteHandlerAdapter {
         for (int i = 0; i < message.capacity(); i++) {
             message.writeByte((byte) i);
         }
-
     }
 
     @Override
@@ -64,7 +64,6 @@ public class EchoByteHandler extends ChannelInboundByteHandlerAdapter {
         ctx.write(message);
 
         ctx.flush();
-
     }
 
     @Override
@@ -82,7 +81,6 @@ public class EchoByteHandler extends ChannelInboundByteHandlerAdapter {
         out.writeBytes(in);
 
         ctx.flush();
-
     }
 
     @Override
@@ -92,16 +90,11 @@ public class EchoByteHandler extends ChannelInboundByteHandlerAdapter {
         log.error("exception : {}", e.getMessage());
 
         ctx.close();
-
     }
 
     @Override
-    public ByteBuf newInboundBuffer(final ChannelHandlerContext ctx)
-            throws Exception {
-
-        return ctx.alloc().directBuffer(
+    public ByteBuf newInboundBuffer(final ChannelHandlerContext ctx) throws Exception {
+        return ChannelHandlerUtil.allocate(ctx,
                 ctx.channel().config().getOption(ChannelOption.SO_RCVBUF));
-
     }
-
 }

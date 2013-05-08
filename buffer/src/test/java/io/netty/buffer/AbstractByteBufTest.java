@@ -24,12 +24,15 @@ import org.junit.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
 
 import static io.netty.buffer.Unpooled.*;
+import static io.netty.util.internal.EmptyArrays.*;
 import static org.hamcrest.CoreMatchers.*;
 import static org.junit.Assert.*;
 
@@ -40,7 +43,13 @@ public abstract class AbstractByteBufTest {
 
     private static final int CAPACITY = 4096; // Must be even
     private static final int BLOCK_SIZE = 128;
-    private static final byte[] EMPTY_ARRAY = new byte[0];
+
+    private static final Queue<ByteBuf> freeLaterQueue = new ArrayDeque<ByteBuf>();
+
+    protected static <T extends ByteBuf> T freeLater(T buf) {
+        freeLaterQueue.add(buf);
+        return buf;
+    }
 
     private long seed;
     private Random random;
@@ -63,13 +72,8 @@ public abstract class AbstractByteBufTest {
     @After
     public void dispose() {
         if (buffer != null) {
-            if (buffer.unwrap() == null) {
-                assertThat(buffer.release(), is(true));
-                assertThat(buffer.refCnt(), is(0));
-            } else {
-                assertThat(buffer.release(), is(false));
-                assertThat(buffer.refCnt(), is(1));
-            }
+            assertThat(buffer.release(), is(true));
+            assertThat(buffer.refCnt(), is(0));
 
             try {
                 buffer.release();
@@ -77,6 +81,17 @@ public abstract class AbstractByteBufTest {
                 // Ignore.
             }
             buffer = null;
+        }
+
+        for (;;) {
+            ByteBuf buf = freeLaterQueue.poll();
+            if (buf == null) {
+                break;
+            }
+
+            if (buf.refCnt() > 0) {
+                buf.release(buf.refCnt());
+            }
         }
     }
 
@@ -220,12 +235,12 @@ public abstract class AbstractByteBufTest {
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void getByteArrayBoundaryCheck1() {
-        buffer.getBytes(-1, EMPTY_ARRAY);
+        buffer.getBytes(-1, EMPTY_BYTES);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void getByteArrayBoundaryCheck2() {
-        buffer.getBytes(-1, EMPTY_ARRAY, 0, 0);
+        buffer.getBytes(-1, EMPTY_BYTES, 0, 0);
     }
 
     @Test
@@ -862,7 +877,7 @@ public abstract class AbstractByteBufTest {
     @Test
     public void testRandomDirectBufferTransfer() {
         byte[] tmp = new byte[BLOCK_SIZE * 2];
-        ByteBuf value = directBuffer(BLOCK_SIZE * 2);
+        ByteBuf value = freeLater(directBuffer(BLOCK_SIZE * 2));
         for (int i = 0; i < buffer.capacity() - BLOCK_SIZE + 1; i += BLOCK_SIZE) {
             random.nextBytes(tmp);
             value.setBytes(0, tmp, 0, value.capacity());
@@ -870,7 +885,7 @@ public abstract class AbstractByteBufTest {
         }
 
         random.setSeed(seed);
-        ByteBuf expectedValue = directBuffer(BLOCK_SIZE * 2);
+        ByteBuf expectedValue = freeLater(directBuffer(BLOCK_SIZE * 2));
         for (int i = 0; i < buffer.capacity() - BLOCK_SIZE + 1; i += BLOCK_SIZE) {
             random.nextBytes(tmp);
             expectedValue.setBytes(0, tmp, 0, expectedValue.capacity());
@@ -880,9 +895,6 @@ public abstract class AbstractByteBufTest {
                 assertEquals(expectedValue.getByte(j), value.getByte(j));
             }
         }
-
-        value.release();
-        expectedValue.release();
     }
 
     @Test
@@ -1029,7 +1041,7 @@ public abstract class AbstractByteBufTest {
     @Test
     public void testSequentialDirectBufferTransfer1() {
         byte[] valueContent = new byte[BLOCK_SIZE * 2];
-        ByteBuf value = directBuffer(BLOCK_SIZE * 2);
+        ByteBuf value = freeLater(directBuffer(BLOCK_SIZE * 2));
         buffer.writerIndex(0);
         for (int i = 0; i < buffer.capacity() - BLOCK_SIZE + 1; i += BLOCK_SIZE) {
             random.nextBytes(valueContent);
@@ -1043,7 +1055,7 @@ public abstract class AbstractByteBufTest {
 
         random.setSeed(seed);
         byte[] expectedValueContent = new byte[BLOCK_SIZE * 2];
-        ByteBuf expectedValue = wrappedBuffer(expectedValueContent);
+        ByteBuf expectedValue = freeLater(wrappedBuffer(expectedValueContent));
         for (int i = 0; i < buffer.capacity() - BLOCK_SIZE + 1; i += BLOCK_SIZE) {
             random.nextBytes(expectedValueContent);
             int valueOffset = random.nextInt(BLOCK_SIZE);
@@ -1057,14 +1069,12 @@ public abstract class AbstractByteBufTest {
             assertEquals(0, value.readerIndex());
             assertEquals(0, value.writerIndex());
         }
-
-        value.release();
     }
 
     @Test
     public void testSequentialDirectBufferTransfer2() {
         byte[] valueContent = new byte[BLOCK_SIZE * 2];
-        ByteBuf value = directBuffer(BLOCK_SIZE * 2);
+        ByteBuf value = freeLater(directBuffer(BLOCK_SIZE * 2));
         buffer.writerIndex(0);
         for (int i = 0; i < buffer.capacity() - BLOCK_SIZE + 1; i += BLOCK_SIZE) {
             random.nextBytes(valueContent);
@@ -1082,7 +1092,7 @@ public abstract class AbstractByteBufTest {
 
         random.setSeed(seed);
         byte[] expectedValueContent = new byte[BLOCK_SIZE * 2];
-        ByteBuf expectedValue = wrappedBuffer(expectedValueContent);
+        ByteBuf expectedValue = freeLater(wrappedBuffer(expectedValueContent));
         for (int i = 0; i < buffer.capacity() - BLOCK_SIZE + 1; i += BLOCK_SIZE) {
             random.nextBytes(expectedValueContent);
             value.setBytes(0, valueContent);
@@ -1098,8 +1108,6 @@ public abstract class AbstractByteBufTest {
             assertEquals(valueOffset, value.readerIndex());
             assertEquals(valueOffset + BLOCK_SIZE, value.writerIndex());
         }
-
-        value.release();
     }
 
     @Test
@@ -1288,7 +1296,7 @@ public abstract class AbstractByteBufTest {
         for (int i = 0; i < buffer.capacity(); i += 4) {
             buffer.writeInt(i);
         }
-        ByteBuf copy = copiedBuffer(buffer);
+        ByteBuf copy = freeLater(copiedBuffer(buffer));
 
         // Make sure there's no effect if called when readerIndex is 0.
         buffer.readerIndex(CAPACITY / 4);
@@ -1340,7 +1348,7 @@ public abstract class AbstractByteBufTest {
         for (int i = 0; i < buffer.capacity(); i ++) {
             buffer.writeByte((byte) i);
         }
-        ByteBuf copy = copiedBuffer(buffer);
+        ByteBuf copy = freeLater(copiedBuffer(buffer));
 
         // Discard the first (CAPACITY / 2 - 1) bytes.
         buffer.setIndex(CAPACITY / 2 - 1, CAPACITY - 1);
@@ -1406,7 +1414,7 @@ public abstract class AbstractByteBufTest {
         buffer.setIndex(readerIndex, writerIndex);
 
         // Make sure all properties are copied.
-        ByteBuf copy = buffer.copy();
+        ByteBuf copy = freeLater(buffer.copy());
         assertEquals(0, copy.readerIndex());
         assertEquals(buffer.readableBytes(), copy.writerIndex());
         assertEquals(buffer.readableBytes(), copy.capacity());
@@ -1511,7 +1519,6 @@ public abstract class AbstractByteBufTest {
         buffer.setIndex(0, value.length);
         buffer.setBytes(0, value);
 
-
         assertEquals(0, buffer.compareTo(wrappedBuffer(value)));
         assertEquals(0, buffer.compareTo(wrappedBuffer(value).order(LITTLE_ENDIAN)));
 
@@ -1604,8 +1611,8 @@ public abstract class AbstractByteBufTest {
 
     @Test
     public void testHashCode() {
-        ByteBuf elemA = buffer(15);
-        ByteBuf elemB = directBuffer(15);
+        ByteBuf elemA = freeLater(buffer(15));
+        ByteBuf elemB = freeLater(directBuffer(15));
         elemA.writeBytes(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5 });
         elemB.writeBytes(new byte[] { 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9 });
 
@@ -1614,9 +1621,9 @@ public abstract class AbstractByteBufTest {
         set.add(elemB);
 
         assertEquals(2, set.size());
-        assertTrue(set.contains(elemA.copy()));
+        assertTrue(set.contains(freeLater(elemA.copy())));
 
-        ByteBuf elemBCopy = elemB.copy();
+        ByteBuf elemBCopy = freeLater(elemB.copy());
         assertTrue(set.contains(elemBCopy));
 
         buffer.clear();
@@ -1631,9 +1638,6 @@ public abstract class AbstractByteBufTest {
         assertTrue(set.remove(buffer));
         assertFalse(set.contains(elemB));
         assertEquals(0, set.size());
-
-        elemB.release();
-        elemBCopy.release();
     }
 
     // Test case for https://github.com/netty/netty/issues/325

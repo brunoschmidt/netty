@@ -33,17 +33,12 @@ public abstract class ChannelInboundByteHandlerAdapter
      */
     @Override
     public ByteBuf newInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        return ctx.alloc().buffer();
+        return ChannelHandlerUtil.allocate(ctx);
     }
 
     @Override
     public void discardInboundReadBytes(ChannelHandlerContext ctx) throws Exception {
         ctx.inboundByteBuffer().discardSomeReadBytes();
-    }
-
-    @Override
-    public void freeInboundBuffer(ChannelHandlerContext ctx) throws Exception {
-        ctx.inboundByteBuffer().release();
     }
 
     @Override

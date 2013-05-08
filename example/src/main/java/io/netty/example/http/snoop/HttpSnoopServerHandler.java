@@ -98,7 +98,7 @@ public class HttpSnoopServerHandler extends ChannelInboundMessageHandlerAdapter<
         if (msg instanceof HttpContent) {
             HttpContent httpContent = (HttpContent) msg;
 
-            ByteBuf content = httpContent.data();
+            ByteBuf content = httpContent.content();
             if (content.isReadable()) {
                 buf.append("CONTENT: ");
                 buf.append(content.toString(CharsetUtil.UTF_8));
@@ -132,11 +132,7 @@ public class HttpSnoopServerHandler extends ChannelInboundMessageHandlerAdapter<
             return;
         }
 
-        buf.append(".. WITH A ");
-        if (result.isPartialFailure()) {
-            buf.append("PARTIAL ");
-        }
-        buf.append("DECODER FAILURE: ");
+        buf.append(".. WITH DECODER FAILURE: ");
         buf.append(result.cause());
         buf.append("\r\n");
     }
@@ -153,7 +149,7 @@ public class HttpSnoopServerHandler extends ChannelInboundMessageHandlerAdapter<
 
         if (keepAlive) {
             // Add 'Content-Length' header only for a keep-alive connection.
-            response.headers().set(CONTENT_LENGTH, response.data().readableBytes());
+            response.headers().set(CONTENT_LENGTH, response.content().readableBytes());
             // Add keep alive header as per:
             // - http://www.w3.org/Protocols/HTTP/1.1/draft-ietf-http-v11-spec-01.html#Connection
             response.headers().set(CONNECTION, HttpHeaders.Values.KEEP_ALIVE);
@@ -190,7 +186,7 @@ public class HttpSnoopServerHandler extends ChannelInboundMessageHandlerAdapter<
     }
 
     @Override
-    protected void endMessageReceived(ChannelHandlerContext ctx) throws Exception {
+    public void endMessageReceived(ChannelHandlerContext ctx) throws Exception {
         ctx.flush();
     }
 

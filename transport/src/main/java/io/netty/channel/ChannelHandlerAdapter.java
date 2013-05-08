@@ -16,6 +16,9 @@
 
 package io.netty.channel;
 
+/**
+ * Skelton implementation of a {@link ChannelHandler}.
+ */
 public abstract class ChannelHandlerAdapter implements ChannelHandler {
 
     // Not using volatile because it's used only for a sanity check.
@@ -33,7 +36,7 @@ public abstract class ChannelHandlerAdapter implements ChannelHandler {
      * Do nothing by default, sub-classes may override this method.
      */
     @Override
-    public void beforeAdd(ChannelHandlerContext ctx) throws Exception {
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         // NOOP
     }
 
@@ -41,23 +44,7 @@ public abstract class ChannelHandlerAdapter implements ChannelHandler {
      * Do nothing by default, sub-classes may override this method.
      */
     @Override
-    public void afterAdd(ChannelHandlerContext ctx) throws Exception {
-        // NOOP
-    }
-
-    /**
-     * Do nothing by default, sub-classes may override this method.
-     */
-    @Override
-    public void beforeRemove(ChannelHandlerContext ctx) throws Exception {
-        // NOOP
-    }
-
-    /**
-     * Do nothing by default, sub-classes may override this method.
-     */
-    @Override
-    public void afterRemove(ChannelHandlerContext ctx) throws Exception {
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
         // NOOP
     }
 
@@ -71,17 +58,5 @@ public abstract class ChannelHandlerAdapter implements ChannelHandler {
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
             throws Exception {
         ctx.fireExceptionCaught(cause);
-    }
-
-    /**
-     * Calls {@link ChannelHandlerContext#fireUserEventTriggered(Object)} to forward
-     * to the next {@link ChannelHandler} in the {@link ChannelPipeline}.
-     *
-     * Sub-classes may override this method to change behavior.
-     */
-    @Override
-    public void userEventTriggered(ChannelHandlerContext ctx, Object evt)
-            throws Exception {
-        ctx.fireUserEventTriggered(evt);
     }
 }

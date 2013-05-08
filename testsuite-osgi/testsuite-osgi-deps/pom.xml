@@ -21,32 +21,18 @@
   <parent>
     <groupId>io.netty</groupId>
     <artifactId>netty-testsuite-osgi-parent</artifactId>
-    <version>4.0.0.Beta3-SNAPSHOT</version>
+    <version>4.0.0.CR2-SNAPSHOT</version>
   </parent>
 
   <artifactId>netty-testsuite-osgi-deps</artifactId>
-  <packaging>feature</packaging>
+  <packaging>bundle</packaging>
 
   <name>Netty/Testsuite/OSGi/Deps</name>
   <description>verify osgi compliance: all transitive dependencies must be osgi bundles</description>
 
-  <pluginRepositories>
-    <pluginRepository>
-      <id>asf</id>
-      <url>http://repository.apache.org/snapshots</url>
-      <releases>
-        <enabled>false</enabled>
-      </releases>
-      <snapshots>
-        <enabled>true</enabled>
-        <updatePolicy>interval:43200</updatePolicy> <!-- Update every 30 days -->
-      </snapshots>
-    </pluginRepository>
-  </pluginRepositories>
-
   <dependencies>
     <!-- MAIN -->
-    <!-- include all osgi bundle release modules -->
+    <!-- Include all Netty OSGI bundle release modules. -->
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>netty-buffer</artifactId>
@@ -108,7 +94,7 @@
 
     <!-- TEST -->
 
-    <!-- file/text conversion -->
+    <!-- File/text conversion utilities. -->
     <dependency>
       <groupId>commons-io</groupId>
       <artifactId>commons-io</artifactId>
@@ -119,22 +105,29 @@
   </dependencies>
 
   <build>
-
     <plugins>
 
-      <!-- produce karaf feature.xml -->
+      <!-- Produce Karaf feature.xml -->
       <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <version>3.0.0.RC1</version>
         <extensions>true</extensions>
+        <executions>
+          <execution>
+            <goals>
+              <goal>features-generate-descriptor</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
 
-      <!-- invoke integration tests -->
+      <!-- Invoke integration tests. -->
       <plugin>
         <artifactId>maven-failsafe-plugin</artifactId>
         <executions>
           <execution>
+            <phase>test</phase>
             <goals>
               <goal>integration-test</goal>
               <goal>verify</goal>
@@ -143,7 +136,7 @@
         </executions>
       </plugin>
 
-      <!-- do not deploy this artifact -->
+      <!-- Do not deploy this artifact. -->
       <plugin>
         <artifactId>maven-deploy-plugin</artifactId>
         <configuration>
@@ -184,3 +177,4 @@
     </pluginManagement>
   </build>
 </project>
+

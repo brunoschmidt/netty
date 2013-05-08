@@ -27,15 +27,11 @@ public class DefaultByteBufHolder implements ByteBufHolder {
         if (data == null) {
             throw new NullPointerException("data");
         }
-        if (data.unwrap() != null && !(data instanceof SwappedByteBuf)) {
-            throw new IllegalArgumentException("Only not-derived ByteBuf instance are supported, you used: "
-                    + data.getClass().getSimpleName());
-        }
         this.data = data;
     }
 
     @Override
-    public ByteBuf data() {
+    public ByteBuf content() {
         if (data.refCnt() <= 0) {
             throw new IllegalBufferAccessException();
         }
@@ -76,6 +72,6 @@ public class DefaultByteBufHolder implements ByteBufHolder {
 
     @Override
     public String toString() {
-        return getClass().getSimpleName() + '(' + data().toString() + ')';
+        return getClass().getSimpleName() + '(' + content().toString() + ')';
     }
 }

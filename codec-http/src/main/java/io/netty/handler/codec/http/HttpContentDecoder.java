@@ -18,10 +18,13 @@ package io.netty.handler.codec.http;
 import io.netty.buffer.BufUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
+import io.netty.buffer.MessageBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedByteChannel;
 import io.netty.handler.codec.MessageToMessageDecoder;
+
+import java.util.Collections;
 
 /**
  * Decodes the content of the received {@link HttpRequest} and {@link HttpContent}.
@@ -50,14 +53,15 @@ public abstract class HttpContentDecoder extends MessageToMessageDecoder<HttpObj
     private boolean continueResponse;
 
     @Override
-    protected Object decode(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
+    protected void decode(ChannelHandlerContext ctx, HttpObject msg, MessageBuf<Object> out) throws Exception {
         if (msg instanceof HttpResponse && ((HttpResponse) msg).getStatus().code() == 100) {
-            // 100-continue response must be passed through.
-            BufUtil.retain(msg);
+
             if (!(msg instanceof LastHttpContent)) {
                 continueResponse = true;
             }
-            return msg;
+            // 100-continue response must be passed through.
+            out.add(BufUtil.retain(msg));
+            return;
         }
 
         if (continueResponse) {
@@ -65,8 +69,8 @@ public abstract class HttpContentDecoder extends MessageToMessageDecoder<HttpObj
                 continueResponse = false;
             }
             // 100-continue response must be passed through.
-            BufUtil.retain(msg);
-            return msg;
+            out.add(BufUtil.retain(msg));
+            return;
         }
 
         if (msg instanceof HttpMessage) {
@@ -104,33 +108,42 @@ public abstract class HttpContentDecoder extends MessageToMessageDecoder<HttpObj
                     } else {
                         headers.set(HttpHeaders.Names.CONTENT_ENCODING, targetContentEncoding);
                     }
+
                     Object[] decoded = decodeContent(message, c);
 
                     // Replace the content.
                     if (headers.contains(HttpHeaders.Names.CONTENT_LENGTH)) {
                         headers.set(
                                 HttpHeaders.Names.CONTENT_LENGTH,
-                                Integer.toString(((ByteBufHolder) decoded[1]).data().readableBytes()));
+                                Integer.toString(((ByteBufHolder) decoded[1]).content().readableBytes()));
                     }
-                    return decoded;
+
+                    Collections.addAll(out, decoded);
+                    return;
                 }
 
-                return new Object[] { message, c.retain() };
+                if (c instanceof LastHttpContent) {
+                    decodeStarted = false;
+                }
+                out.add(message);
+                out.add(c.retain());
+                return;
             }
 
             if (decoder != null) {
-                return decodeContent(null, c);
+                Collections.addAll(out, decodeContent(null, c));
             } else {
-                return c.retain();
+                if (c instanceof LastHttpContent) {
+                    decodeStarted = false;
+                }
+                out.add(c.retain());
             }
         }
-
-        return null;
     }
 
     private Object[] decodeContent(HttpMessage header, HttpContent c) {
         ByteBuf newContent = Unpooled.buffer();
-        ByteBuf content = c.data();
+        ByteBuf content = c.content();
         decode(content, newContent);
 
         if (c instanceof LastHttpContent) {
@@ -186,9 +199,9 @@ public abstract class HttpContentDecoder extends MessageToMessageDecoder<HttpObj
     }
 
     @Override
-    public void afterRemove(ChannelHandlerContext ctx) throws Exception {
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
         cleanup();
-        super.afterRemove(ctx);
+        super.handlerRemoved(ctx);
     }
 
     @Override
@@ -205,7 +218,8 @@ public abstract class HttpContentDecoder extends MessageToMessageDecoder<HttpObj
     }
 
     private void decode(ByteBuf in, ByteBuf out) {
-        decoder.writeInbound(in);
+        // call retain as it will be release after is written
+        decoder.writeInbound(in.retain());
         fetchDecoderOutput(out);
     }
 
@@ -213,6 +227,7 @@ public abstract class HttpContentDecoder extends MessageToMessageDecoder<HttpObj
         if (decoder.finish()) {
             fetchDecoderOutput(out);
         }
+        decodeStarted = false;
         decoder = null;
     }
 

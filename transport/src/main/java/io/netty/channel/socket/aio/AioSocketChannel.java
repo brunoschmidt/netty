@@ -23,6 +23,7 @@ import io.netty.channel.ChannelFlushPromiseNotifier;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelMetadata;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelProgressivePromise;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.EventLoop;
 import io.netty.channel.FileRegion;
@@ -76,7 +77,12 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
     private boolean readInProgress;
     private boolean inDoBeginRead;
     private boolean readAgain;
-    private boolean writeInProgress;
+
+    private static final int NO_WRITE_IN_PROGRESS = 0;
+    private static final int WRITE_IN_PROGRESS = 1;
+    private static final int WRITE_FAILED = -2;
+
+    private int writeInProgress;
     private boolean inDoFlushByteBuffer;
 
     /**
@@ -246,7 +252,7 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
 
     @Override
     protected void doFlushByteBuffer(ByteBuf buf) throws Exception {
-        if (inDoFlushByteBuffer || writeInProgress) {
+        if (inDoFlushByteBuffer || writeInProgress != NO_WRITE_IN_PROGRESS) {
             return;
         }
 
@@ -263,7 +269,7 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
                     // discardReadBytes() later, modifying the readerIndex and the writerIndex unexpectedly.
                     buf.discardReadBytes();
 
-                    writeInProgress = true;
+                    writeInProgress = WRITE_IN_PROGRESS;
                     if (buf.nioBufferCount() == 1) {
                         javaChannel().write(
                                 buf.nioBuffer(), config.getWriteTimeout(), TimeUnit.MILLISECONDS, this, WRITE_HANDLER);
@@ -279,7 +285,13 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
                         }
                     }
 
-                    if (writeInProgress) {
+                    if (writeInProgress != NO_WRITE_IN_PROGRESS) {
+                        if (writeInProgress == WRITE_FAILED) {
+                            // failed because of an exception so reset state and break out of the loop now
+                            // See #1242
+                            writeInProgress = NO_WRITE_IN_PROGRESS;
+                            break;
+                        }
                         // JDK decided to write data (or notify handler) later.
                         buf.suspendIntermediaryDeallocations();
                         break;
@@ -368,9 +380,9 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
 
         @Override
         protected void completed0(T result, AioSocketChannel channel) {
-            channel.writeInProgress = false;
+            channel.writeInProgress = NO_WRITE_IN_PROGRESS;
 
-            ByteBuf buf = channel.unsafe().directOutboundContext().outboundByteBuffer();
+            ByteBuf buf = channel.unsafe().headContext().outboundByteBuffer();
             if (buf.refCnt() == 0) {
                 return;
             }
@@ -407,7 +419,7 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
 
         @Override
         protected void failed0(Throwable cause, AioSocketChannel channel) {
-            channel.writeInProgress = false;
+            channel.writeInProgress = WRITE_FAILED;
             channel.flushFutureNotifier.notifyFlushFutures(cause);
 
             // Check if the exception was raised because of an InterruptedByTimeoutException which means that the
@@ -510,7 +522,6 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
         @Override
         protected void completed0(Void result, AioSocketChannel channel) {
             ((DefaultAioUnsafe) channel.unsafe()).connectSuccess();
-            channel.pipeline().fireChannelActive();
         }
 
         @Override
@@ -551,6 +562,10 @@ public class AioSocketChannel extends AbstractAioChannel implements SocketChanne
                             return;
                         }
                         written += result;
+
+                        if (promise instanceof ChannelProgressivePromise) {
+                            ((ChannelProgressivePromise) promise).setProgress(written, region.count());
+                        }
 
                         if (written >= region.count()) {
                             region.release();

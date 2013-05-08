@@ -190,34 +190,20 @@ import java.lang.annotation.Target;
 public interface ChannelHandler {
 
     /**
-     * Gets called before the {@link ChannelHandler} is added to the actual context.
+     * Gets called after the {@link ChannelHandler} was added to the actual context and it's ready to handle events.
      */
-    void beforeAdd(ChannelHandlerContext ctx) throws Exception;
+    void handlerAdded(ChannelHandlerContext ctx) throws Exception;
 
     /**
-     * Gets called after the {@link ChannelHandler} was added to the actual context.
+     * Gets called after the {@link ChannelHandler} was removed from the actual context and it doesn't handle events
+     * anymore.
      */
-    void afterAdd(ChannelHandlerContext ctx) throws Exception;
-
-    /**
-     * Gets called before the {@link ChannelHandler} is removed from the actual context.
-     */
-    void beforeRemove(ChannelHandlerContext ctx) throws Exception;
-
-    /**
-     * Gets called after the {@link ChannelHandler} was removed from the actual context.
-     */
-    void afterRemove(ChannelHandlerContext ctx) throws Exception;
+    void handlerRemoved(ChannelHandlerContext ctx) throws Exception;
 
     /**
      * Gets called if a {@link Throwable} was thrown.
      */
     void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception;
-
-    /**
-     * Gets called if an user event was triggered.
-     */
-    void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception;
 
     /**
      * Indicates that the same instance of the annotated {@link ChannelHandler}
